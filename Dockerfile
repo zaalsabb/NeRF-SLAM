@@ -57,13 +57,10 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 RUN apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
 RUN apt-get update && apt-get install cmake -y
 
-WORKDIR /project
-
-RUN git clone https://github.com/jrpowers/NeRF-SLAM.git --recurse-submodules
+# copy files
 WORKDIR /project/NeRF-SLAM
-RUN git submodule update --init --recursive
-RUN cd thirdparty/instant-ngp/ && git checkout feature/nerf_slam
-
+COPY ./thirdparty /project/NeRF-SLAM/thirdparty
+COPY ./requirements.txt /project/NeRF-SLAM/requirements.txt
 #RUN python -m pip install -U pip
 #RUN pip install -U pip
 
@@ -86,12 +83,16 @@ RUN cmake --build build_gtsam --config RelWithDebInfo -j
 RUN cd build_gtsam && make python-install
 #RUN cd ..
 
-RUN python3 setup.py install
 
 RUN sudo apt-get install -y unzip
 
 # Download Gdown
-#RUN apt-get install -y python3-pip
-#RUN ./scripts/download_replica_sample.bash
+RUN apt-get install -y python3-pip
+COPY ./scripts /project/NeRF-SLAM/scripts
+RUN ./scripts/download_replica_sample.bash
 
-#RUN ln -s /usr/bin/pip3 /usr/bin/pip
+COPY ./ /project/NeRF-SLAM
+RUN python3 setup.py install
+
+RUN ln -s /usr/bin/pip3 /usr/bin/pip
+ENTRYPOINT ["python",  "./examples/slam_demo.py"]

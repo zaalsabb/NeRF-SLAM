@@ -22,18 +22,18 @@ def parse_args():
 
     # SLAM ARGS
     parser.add_argument("--parallel_run", action="store_true", help="Whether to run in parallel")
-    parser.add_argument("--multi_gpu", action="store_true", help="Whether to run with multiple (two) GPUs")
+    parser.add_argument("--multi_gpu", action="store_true", help="Whether to run with multiple (two) GPUs",default=True)
     parser.add_argument("--initial_k", type=int, help="Initial frame to parse in the dataset", default=0)
     parser.add_argument("--final_k", type=int, help="Final frame to parse in the dataset, -1 is all.", default=-1)
     parser.add_argument("--img_stride", type=int, help="Number of frames to skip when parsing the dataset", default=1)
     parser.add_argument("--stereo", action="store_true", help="Use stereo images")
     parser.add_argument("--weights", default="droid.pth", help="Path to the weights file")
-    parser.add_argument("--buffer", type=int, default=512, help="Number of keyframes to keep")
+    parser.add_argument("--buffer", type=int, default=100, help="Number of keyframes to keep")
 
     parser.add_argument("--dataset_dir", type=str,
                         help="Path to the dataset directory",
-                        default="/home/tonirv/Datasets/euroc/V1_01_easy")
-    parser.add_argument('--dataset_name', type=str, default='euroc',
+                        default="./datasets/nerf-cube-diorama-dataset/room")
+    parser.add_argument('--dataset_name', type=str, default='nerf',
                         choices=['euroc', 'nerf', 'replica', 'real'],
                         help='Dataset format to use.')
 
@@ -41,7 +41,7 @@ def parse_args():
 
     #parser.add_argument("--gui", action="store_true", help="Run the testbed GUI interactively.")
     parser.add_argument("--slam", action="store_true", help="Run SLAM.")
-    parser.add_argument("--fusion", type=str, default='', choices=['tsdf', 'sigma', 'nerf', ''],
+    parser.add_argument("--fusion", type=str, default='nerf', choices=['tsdf', 'sigma', 'nerf', ''],
                         help="Fusion approach ('' for none):\n\
                             -`tsdf' classical tsdf-fusion using Open3D\n \
                             -`sigma' tsdf-fusion with uncertainty values (Rosinol22wacv)\n \

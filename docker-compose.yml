@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  api:
+    build: 
+      context: .
+      network: host    
+    volumes:
+        - $HOME/datasets/:/root/datasets/
+    network_mode: "host" 
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
