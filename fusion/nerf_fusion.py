@@ -466,9 +466,11 @@ class NerfFusion:
             total_l1 += l1
             count += 1
 
-            ref_image_viz = cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA) # Required for Nerf Fusion, perhaps we can put it in there
-            est_image_viz = cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA) # Required for Nerf Fusion, perhaps we can put it in there
-            cv2.imwrite('./datasets/ref_image_viz.jpg',ref_image_viz)
+            ref_image_viz = cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA)
+            est_image_viz = cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
+
+            cv2.imwrite('./datasets/est_image_viz.jpg',255*est_image_viz)
+            cv2.imwrite('./datasets/ref_image_viz.jpg',255*ref_image_viz)
 
             if self.viz:
                 ref_image_viz = cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA) # Required for Nerf Fusion, perhaps we can put it in there
