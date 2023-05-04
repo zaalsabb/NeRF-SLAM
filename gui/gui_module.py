@@ -20,6 +20,9 @@ class GuiModule(MIMOPipelineModule):
             self.gui = Open3dGui(self.args, self.device)
         elif self.name == "DearPyGui":
             raise NotImplementedError
+        elif self.name == "NoGui":
+            from gui.no_gui import NoGui
+            self.gui = NoGui(self.args, self.device)
         else:
             raise NotImplementedError
         self.gui.initialize()

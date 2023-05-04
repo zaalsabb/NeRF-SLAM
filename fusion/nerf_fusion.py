@@ -73,19 +73,19 @@ class NerfFusion:
 
         self.ngp.nerf.training.n_images_for_training = 0;
 
-        if args.gui:
-            # Pick a sensible GUI resolution depending on arguments.
-            sw = args.width or 1920
-            sh = args.height or 1080
-            while sw*sh > 1920*1080*4:
-                sw = int(sw / 2)
-                sh = int(sh / 2)
-            self.ngp.init_window(640, 480, second_window=False)
+        # if args.gui:
+        #     # Pick a sensible GUI resolution depending on arguments.
+        #     sw = args.width or 1920
+        #     sh = args.height or 1080
+        #     while sw*sh > 1920*1080*4:
+        #         sw = int(sw / 2)
+        #         sh = int(sh / 2)
+        #     self.ngp.init_window(640, 480, second_window=False)
 
-            # Gui params:
-            self.ngp.display_gui = True
-            self.ngp.nerf.visualize_cameras = True
-            self.ngp.visualize_unit_cube = False
+        #     # Gui params:
+        #     self.ngp.display_gui = True
+        #     self.ngp.nerf.visualize_cameras = True
+        #     self.ngp.visualize_unit_cube = False
 
         self.ngp.reload_network_from_file(network)
 
@@ -282,6 +282,8 @@ class NerfFusion:
         principal_point = intrinsics[2:]
 
         # TODO: we need to restore the self.ref_frames[frame_id] = [image, gt, etc] for evaluation....
+        for i, id in enumerate(frame_ids):
+            self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i]]        
         self.ngp.nerf.training.update_training_images(list(frame_ids),
                                                       list(poses[:, :3, :4]), 
                                                       list(images), 
@@ -463,6 +465,10 @@ class NerfFusion:
             l1 = diff_depth_map.mean() * 100 # From m to cm AND use the mean (as in Nice-SLAM)
             total_l1 += l1
             count += 1
+
+            ref_image_viz = cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA) # Required for Nerf Fusion, perhaps we can put it in there
+            est_image_viz = cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA) # Required for Nerf Fusion, perhaps we can put it in there
+            cv2.imwrite('./datasets/ref_image_viz.jpg',ref_image_viz)
 
             if self.viz:
                 ref_image_viz = cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA) # Required for Nerf Fusion, perhaps we can put it in there

@@ -22,18 +22,18 @@ def parse_args():
 
     # SLAM ARGS
     parser.add_argument("--parallel_run", action="store_true", help="Whether to run in parallel")
-    parser.add_argument("--multi_gpu", action="store_true", help="Whether to run with multiple (two) GPUs",default=True)
+    parser.add_argument("--multi_gpu", action="store_true", help="Whether to run with multiple (two) GPUs")
     parser.add_argument("--initial_k", type=int, help="Initial frame to parse in the dataset", default=0)
     parser.add_argument("--final_k", type=int, help="Final frame to parse in the dataset, -1 is all.", default=-1)
     parser.add_argument("--img_stride", type=int, help="Number of frames to skip when parsing the dataset", default=1)
     parser.add_argument("--stereo", action="store_true", help="Use stereo images")
     parser.add_argument("--weights", default="droid.pth", help="Path to the weights file")
-    parser.add_argument("--buffer", type=int, default=100, help="Number of keyframes to keep")
+    parser.add_argument("--buffer", type=int, default=512, help="Number of keyframes to keep")
 
     parser.add_argument("--dataset_dir", type=str,
                         help="Path to the dataset directory",
-                        default="./datasets/nerf-cube-diorama-dataset/room")
-    parser.add_argument('--dataset_name', type=str, default='nerf',
+                        default="/home/tonirv/Datasets/euroc/V1_01_easy")
+    parser.add_argument('--dataset_name', type=str, default='euroc',
                         choices=['euroc', 'nerf', 'replica', 'real'],
                         help='Dataset format to use.')
 
@@ -41,7 +41,7 @@ def parse_args():
 
     #parser.add_argument("--gui", action="store_true", help="Run the testbed GUI interactively.")
     parser.add_argument("--slam", action="store_true", help="Run SLAM.")
-    parser.add_argument("--fusion", type=str, default='nerf', choices=['tsdf', 'sigma', 'nerf', ''],
+    parser.add_argument("--fusion", type=str, default='', choices=['tsdf', 'sigma', 'nerf', ''],
                         help="Fusion approach ('' for none):\n\
                             -`tsdf' classical tsdf-fusion using Open3D\n \
                             -`sigma' tsdf-fusion with uncertainty values (Rosinol22wacv)\n \
@@ -113,8 +113,9 @@ def run(args):
 
     # Create interactive Gui
     gui = args.gui and args.fusion != 'nerf' # nerf has its own gui
-    if gui:
-        gui_module = GuiModule("Open3DGui", args, device=cuda_slam) # don't use cuda:1, o3d doesn't work...
+    print(f'fusion: {fusion}')
+    if gui:        
+        gui_module = GuiModule("NoGui", args, device=cuda_slam) # don't use cuda:1, o3d doesn't work...
         data_provider_module.register_output_queue(data_for_viz_output_queue)
         if slam:
             slam_module.register_output_queue(slam_output_queue_for_o3d)
@@ -169,12 +170,13 @@ def run(args):
         print("Running pipeline in sequential mode.")
 
         # Initialize all modules first (and register 3D volume)
+        # print(f'test:{data_provider_module.spin()}')
         if data_provider_module.spin() \
             and (not slam or slam_module.spin()) \
-            and (not fusion or fusion_module.spin()):
-            if gui:
-                gui_module.spin()
-                #gui_module.register_volume(fusion_module.fusion.volume)
+            and (not fusion or fusion_module.spin()):                
+                if gui:
+                    gui_module.spin()
+                    #gui_module.register_volume(fusion_module.fusion.volume)
 
         # Run sequential, dataprovider fills queue and gui empties it
         while data_provider_module.spin() \

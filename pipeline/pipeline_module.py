@@ -86,7 +86,7 @@ class PipelineModule(PipelineModuleBase):
 
         if not self.is_initialized:
             self.initialize_module()
-
+        
         while not self.shutdown:
             self.is_thread_working = False;
             input = self.get_input_packet();

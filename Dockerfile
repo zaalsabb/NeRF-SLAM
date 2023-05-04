@@ -57,10 +57,17 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 RUN apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
 RUN apt-get update && apt-get install cmake -y
 
-# copy files
+# git clone dir from zaalsabb fork
+WORKDIR /project
+RUN git clone https://github.com/zaalsabb/NeRF-SLAM.git --recurse-submodules
 WORKDIR /project/NeRF-SLAM
-COPY ./thirdparty /project/NeRF-SLAM/thirdparty
-COPY ./requirements.txt /project/NeRF-SLAM/requirements.txt
+RUN git submodule update --init --recursive
+RUN cd thirdparty/instant-ngp/ && git checkout feature/nerf_slam
+
+# copy files
+# WORKDIR /project/NeRF-SLAM
+# COPY ./thirdparty /project/NeRF-SLAM/thirdparty
+# COPY ./requirements.txt /project/NeRF-SLAM/requirements.txt
 #RUN python -m pip install -U pip
 #RUN pip install -U pip
 
@@ -88,11 +95,15 @@ RUN sudo apt-get install -y unzip
 
 # Download Gdown
 RUN apt-get install -y python3-pip
-COPY ./scripts /project/NeRF-SLAM/scripts
-RUN ./scripts/download_replica_sample.bash
+# COPY ./scripts /project/NeRF-SLAM/scripts
+# RUN ./scripts/download_replica_sample.bash
 
-COPY ./ /project/NeRF-SLAM
 RUN python3 setup.py install
 
-RUN ln -s /usr/bin/pip3 /usr/bin/pip
-ENTRYPOINT ["python",  "./examples/slam_demo.py"]
+# only copy gui files to not rebuild docker image
+COPY ./gui /project/NeRF-SLAM/gui
+COPY ./fusion /project/NeRF-SLAM/fusion
+COPY ./examples /project/NeRF-SLAM/examples
+COPY ./scripts/run.sh /project/NeRF-SLAM/run.sh
+
+CMD ["bash","run.sh"]
