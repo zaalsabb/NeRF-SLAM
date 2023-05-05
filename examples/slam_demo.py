@@ -16,6 +16,21 @@ from fusion.fusion_module import FusionModule
 from icecream import ic
 
 import argparse
+import yaml
+
+class Struct:
+    def __init__(self, **entries): 
+        self.__dict__.update(entries)
+
+def load_args(fname):
+
+    with open(fname) as f:
+        args = yaml.safe_load(f)
+
+    args = Struct(**args)
+
+    return args
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Instant-SLAM")
@@ -194,7 +209,8 @@ def run(args):
     # Delete everything and clean memory
 
 if __name__ == '__main__':
-    args = parse_args()
+    # args = parse_args()
+    args = load_args('config/params.yaml')
 
     torch.multiprocessing.set_start_method('spawn')
     torch.cuda.empty_cache()
