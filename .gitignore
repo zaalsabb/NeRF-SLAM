@@ -7,6 +7,8 @@ imgui.ini
 *.ply
 *.obj
 
+datasets/*
+
 
 ### Python specific gitignore
 # Byte-compiled / optimized / DLL files

@@ -102,6 +102,7 @@ RUN python3 setup.py install
 
 # only copy gui files to not rebuild docker image
 COPY ./gui /project/NeRF-SLAM/gui
+COPY ./config /project/NeRF-SLAM/config
 COPY ./fusion /project/NeRF-SLAM/fusion
 COPY ./examples /project/NeRF-SLAM/examples
 COPY ./scripts/run.sh /project/NeRF-SLAM/run.sh
