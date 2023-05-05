@@ -100,11 +100,11 @@ RUN apt-get install -y python3-pip
 
 RUN python3 setup.py install
 
-# only copy gui files to not rebuild docker image
+# only copy these files to not rebuild docker image
+COPY ./app.py /project/NeRF-SLAM/app.py
 COPY ./gui /project/NeRF-SLAM/gui
 COPY ./config /project/NeRF-SLAM/config
 COPY ./fusion /project/NeRF-SLAM/fusion
 COPY ./examples /project/NeRF-SLAM/examples
-COPY ./scripts/run.sh /project/NeRF-SLAM/run.sh
 
-CMD ["bash","run.sh"]
+CMD ["python3", "./examples/slam_demo.py"]
