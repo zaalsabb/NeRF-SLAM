@@ -106,5 +106,7 @@ COPY ./gui /project/NeRF-SLAM/gui
 COPY ./config /project/NeRF-SLAM/config
 COPY ./fusion /project/NeRF-SLAM/fusion
 COPY ./examples /project/NeRF-SLAM/examples
+COPY ./app.py /project/NeRF-SLAM/app.py
+COPY ./nerf_slam.py /project/NeRF-SLAM/nerf_slam.py
 
-CMD ["python3", "./examples/slam_demo.py"]
+ENTRYPOINT ["python3", "app.py"]
