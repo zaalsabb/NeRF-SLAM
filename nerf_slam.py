@@ -35,9 +35,10 @@ class NerfSLAM():
         self.fusion_module = None
         self.slam_module = None
         self.data_module = None    
-        
+
+    def run_nerf(self):
         args = self.load_args()
-        # self.run(args)
+        self.run(args)        
 
     def save_intrinsics_file(self):
         with open(self.intrinsics_file, 'w') as f:

@@ -6,7 +6,7 @@ services:
       context: .
       network: host    
     volumes:
-        - /home/uwcviss/projects/NeRF-SLAM/datasets/:/project/NeRF-SLAM/datasets/
+        - $HOME/datasets/:/datasets/
     network_mode: "host" 
     deploy:
       resources:

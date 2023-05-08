@@ -11,8 +11,7 @@ app = flask.Flask(__name__)
 nerfs = {}
     
 def load_nerf(project_id: int):     
-    home = os.environ.get('HOME')
-    dataset_dir = os.path.join(f"{home}/datasets", f"project_{project_id}")
+    dataset_dir = os.path.join(f"/datasets", f"project_{project_id}")
     os.makedirs(dataset_dir, exist_ok=True)
     
     nerf_slam = NerfSLAM(dataset_dir)
@@ -71,6 +70,14 @@ def send_ref_image(project_id, image_id):
     else:
         return flask.make_response("Invalid request", 404)
 
+@app.route("/nerfslam/api/v1/project/<int:project_id>/run_nerf")
+def run_nerf(project_id):
+    if project_id not in nerfs:
+        return flask.make_response("Project not loaded", 404)
+    else:
+        nerfs[project_id].run_nerf()
+        return flask.make_response("Running nerf")
+    pass
 
 @app.route("/nerfslam/api/v1/project/<int:project_id>/create_nerf_view")
 def create_nerf_view(project_id):
