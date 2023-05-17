@@ -186,3 +186,22 @@ def compute_error(img, ref):
         metric_map = np.mean(metric_map, axis=2)
     mean = np.mean(metric_map)
     return mean
+
+
+def pose2matrix(pose):
+    p = pose[:3]
+    q = pose[3:]
+    R = Rotation.from_quat(q)
+    T_m_c = np.eye(4)
+    T_m_c[:3, :3] = R.as_matrix()
+    T_m_c[:3, 3] = p
+    return T_m_c
+
+def matrix2pose(T_m_c):
+    R = T_m_c[:3,:3]
+    p = T_m_c[:3,3]
+    q = Rotation.from_matrix(R).as_quat()
+
+    pose = np.concatenate([p,q])
+
+    return pose

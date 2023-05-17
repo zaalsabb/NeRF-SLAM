@@ -5,6 +5,7 @@ import yaml
 import json
 import numpy as np
 import cv2
+from utils.utils import *
 
 from icecream import ic
 
@@ -19,6 +20,12 @@ from gui.gui_module import GuiModule
 from slam.slam_module import SlamModule
 from fusion.fusion_module import FusionModule
 
+# torch.multiprocessing.set_start_method('spawn')
+# torch.cuda.empty_cache()
+# torch.backends.cudnn.benchmark = True
+# torch.set_grad_enabled(False)
+
+
 class Struct:
     def __init__(self, **entries): 
         self.__dict__.update(entries)
@@ -28,52 +35,94 @@ class NerfSLAM():
         self.dataset_dir = dataset_dir
         self.intrinsics_file = os.path.join(self.dataset_dir, 'transforms.json')
         self.intrinsics = {}
+        self.K = np.eye(3)
+        self.w = 0
+        self.h = 0
+        self.d = np.zeros(5)
+        self.poses_t = []
 
         os.makedirs(self.dataset_dir, exist_ok=True)
         os.makedirs(os.path.join(self.dataset_dir,'images'), exist_ok=True)
+        os.makedirs(os.path.join(self.dataset_dir,'output'), exist_ok=True)
 
         self.fusion_module = None
         self.slam_module = None
         self.data_module = None    
 
+        self.output_dir = os.path.join(self.dataset_dir,'output')
+
     def run_nerf(self):
         args = self.load_args()
+        torch.multiprocessing.set_start_method('spawn')
+        torch.backends.cudnn.benchmark = True
+        torch.set_grad_enabled(False)        
+        torch.cuda.empty_cache()
         self.run(args)        
+
 
     def save_intrinsics_file(self):
         with open(self.intrinsics_file, 'w') as f:
-            json.dump(self.intrinsics, f)        
+            json.dump(self.intrinsics, f)    
 
-    def set_intrinsics(self,K, w, h):
+    def load_intrinsics_file(self):
+        with open(self.intrinsics_file, 'r') as f:
+            self.intrinsics = json.load(f)
+
+        self.K[0,0] = self.intrinsics["fl_x"]
+        self.K[1,1] = self.intrinsics["fl_y"]
+        self.K[0,2] = self.intrinsics["cx"]   
+        self.K[1,2] = self.intrinsics["cy"]   
+        self.w      = self.intrinsics["w"]    
+        self.h      = self.intrinsics["h"]    
+        self.d[0]   = self.intrinsics["k1"]
+        self.d[1]   = self.intrinsics["k2"]
+        self.d[2]   = self.intrinsics["p1"]
+        self.d[3]   = self.intrinsics["p2"]
+
+    def set_intrinsics(self, K, w, h, d):
+
+        self.K = K
+        self.w = w
+        self.h = h
 
         self.intrinsics["fl_x"] = K[0,0]
         self.intrinsics["fl_y"] = K[1,1]
-        self.intrinsics["k1"]   = 0
-        self.intrinsics["k2"]   = 0
-        self.intrinsics["p1"]   = 0
-        self.intrinsics["p2"]   = 0
+        self.intrinsics["k1"]   = d[0]
+        self.intrinsics["k2"]   = d[1]
+        self.intrinsics["p1"]   = d[2]
+        self.intrinsics["p2"]   = d[3]
         self.intrinsics["cx"]   = K[0,2]
         self.intrinsics["cy"]   = K[1,2]
         self.intrinsics["w"]    = w
         self.intrinsics["h"]    = h
 
-        self.intrinsics["aabb"] = (2*np.array([[-2, -2, -2], [2, 2, 2]])).tolist() # Computed automatically in to_nerf()?
         self.intrinsics["aabb_scale"] = 1.0
 
         self.save_intrinsics_file()
 
 
-    def save_image(self, image, k):
+    def save_image(self, image, pose, k):
         if 'frames' not in self.intrinsics:
             self.intrinsics['frames'] = []
         
+        self.poses_t.append(pose)
+        if len(self.poses_t) > 1: 
+            delta_t = 1.0 # 1 meter extra to allow for the depth of the camera
+            poses_t = np.array(self.poses_t)
+            t_max = np.amax(poses_t, 0).flatten()
+            t_min = np.amin(poses_t, 0).flatten()
+            self.intrinsics["aabb"] = np.array([t_min-delta_t, t_max+delta_t]).tolist()
+        else:
+            self.intrinsics["aabb"]  = np.array([[-2, -2, -2], [2, 2, 2]]).tolist() # Computed automatically
+
         frame = {}
         frame['file_path'] = f"images/frame{k:05}.png"
-        frame['transform_matrix'] = np.eye(4).tolist()
+        frame['transform_matrix'] = pose2matrix(pose).tolist()
         self.intrinsics['frames'].append(frame)
 
         cv2.imwrite(os.path.join(self.dataset_dir,frame['file_path']), cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA))
-        self.save_intrinsics_file()
+
+        self.save_intrinsics_file()  
 
     
     def load_args(self):
@@ -86,6 +135,11 @@ class NerfSLAM():
 
         return args
 
+    
+    def create_view(self, pose):
+        self.load_intrinsics_file()
+        self.fusion_module.fusion.create_view(pose, self.w, self.h, self.output_dir)
+    
     def run(self, args):
         if args.parallel_run and args.multi_gpu:
             os.environ['CUDA_VISIBLE_DEVICES'] = "0,1"
@@ -213,9 +267,16 @@ class NerfSLAM():
                 continue
 
             # # Then gui runs indefinitely until user closes window
-            # ok = True
-            # while ok:
-            #     if gui: ok &= gui_module.spin()
-            #     if fusion: ok &= self.fusion_module.spin()
+            ok = True
+            while ok:
+                if gui: ok &= gui_module.spin()
+                if fusion: ok &= self.fusion_module.spin()
 
         # Delete everything and clean memory
+
+if __name__ == '__main__':
+
+    project_id = 1
+    dataset_dir = os.path.join(f"/datasets", f"project_{project_id}")
+    nerf = NerfSLAM(dataset_dir)
+    nerf.run_nerf()

@@ -2,13 +2,13 @@ parallel_run: False
 multi_gpu: True
 initial_k: 0
 final_k: -1
-img_stride: 2 
+img_stride: 2
 stereo: False
 weights: droid.pth
-buffer: 100 
+buffer: 512
 
-dataset_dir: /home/zaid/datasets/iwshm2023_data/drone
-url: localhost:5000
+# dataset_dir: /home/zaid/datasets/iwshm2023_data/drone
+# url: localhost:5000
 dataset_name: nerf
 
 mask_type: ours

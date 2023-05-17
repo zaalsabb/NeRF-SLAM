@@ -100,9 +100,14 @@ RUN apt-get install -y python3-pip
 
 RUN python3 setup.py install
 
+# set environment variables
+# ENV PYTHONDONTWRITEBYTECODE 1
+# ENV PYTHONUNBUFFERED 1
+
 # only copy these files to not rebuild docker image
 COPY ./app.py /project/NeRF-SLAM/app.py
 COPY ./gui /project/NeRF-SLAM/gui
+COPY ./utils /project/NeRF-SLAM/utils
 COPY ./config /project/NeRF-SLAM/config
 COPY ./fusion /project/NeRF-SLAM/fusion
 COPY ./examples /project/NeRF-SLAM/examples
@@ -110,3 +115,4 @@ COPY ./app.py /project/NeRF-SLAM/app.py
 COPY ./nerf_slam.py /project/NeRF-SLAM/nerf_slam.py
 
 ENTRYPOINT ["python3", "app.py"]
+# CMD ["python3", "nerf_slam.py"]

@@ -9,6 +9,7 @@ import cv2
 from icecream import ic
 
 from utils.flow_viz import *
+from utils.utils import *
 
 import os
 import sys
@@ -41,7 +42,7 @@ class NerfFusion:
         # with open(os.path.join(args.dataset_dir, "transforms.json"), 'r') as f:
         #     self.json = json.load(f)
         # self.render_path = []
-        # self.gt_to_slam_scale = 0.1 # We should be calculating this online.... Sim(3) pose alignment
+        self.gt_to_slam_scale = 1 # We should be calculating this online.... Sim(3) pose alignment
         # for frame in self.json["frames"]:
         #     c2w = np.array(frame['transform_matrix'])
         #     c2w = nerf_matrix_to_ngp(c2w, scale=self.gt_to_slam_scale, offset=0.0) # THIS multiplies by scale = 1 and offset = 0.5
@@ -111,7 +112,7 @@ class NerfFusion:
         self.annealing_rate = 0.95
 
         self.evaluate = args.eval
-        self.eval_every_iters = 200
+        self.eval_every_iters = 5000
         if self.evaluate:
             self.df = pandas.DataFrame(columns=['Iter', 'Dt','PSNR', 'L1', 'count'])
 
@@ -296,21 +297,23 @@ class NerfFusion:
 
 
     def fit_volume(self):
-        #print(f"Fitting volume for {self.iters} iters")
+        print(f"Fitting volume for {self.iters} iters")
         self.fps = 30
         for _ in range(self.iters):
             self.fit_volume_once()
             self.ngp.apply_camera_smoothing(1000.0/self.fps)
+        if self.evaluate and self.total_iters % self.eval_every_iters == 0:
+            self.create_training_views()
 
     def fit_volume_once(self):
         self.ngp.frame()
         dt = self.ngp.elapsed_training_time
-        #print(f"Iter={self.total_iters}; Dt={dt}; Loss={self.ngp.loss}")
+        ic(f"Iter={self.total_iters}; Dt={dt}; Loss={self.ngp.loss}")
         if self.anneal and self.total_iters % self.anneal_every_iters == 0:
             self.ngp.nerf.training.depth_supervision_lambda *= self.annealing_rate
         if self.evaluate and self.total_iters % self.eval_every_iters == 0:
             print("Evaluate.")
-            self.eval_gt_traj()
+            # self.eval_gt_traj()
         self.total_iters += 1
 
     def evaluate_depth(self):
@@ -383,7 +386,103 @@ class NerfFusion:
         #ic(self.ngp.nerf.training.dataset.transforms[0].start)
         #ic(self.ngp.nerf.training.dataset.transforms[0].end)
 
+    def create_view(self, pose, w, h, output_dir):
+        spp = 1 # samples per pixel
+        linear = True
+        fps = 20.0
+
+        self.ngp.background_color = [0.0, 0.0, 0.0, 1.0]
+        self.ngp.snap_to_pixel_centers = True
+        self.ngp.nerf.rendering_min_transmittance = 1e-4
+        # # self.ngp.shall_train = False
+
+        c2w = pose2matrix(pose)
+        c2w = nerf_matrix_to_ngp(c2w, scale=self.gt_to_slam_scale) # THIS multiplies by scale = 1 and offset = 0.5
+        w2c = np.linalg.inv(c2w)        
+
+        self.ngp.camera_matrix = w2c[:3,:]
+        # self.ngp.set_camera_to_training_view(0)
+        # ic(self.ngp.camera_matrix) 
+
+        # Get ref/est RGB images
+        self.ngp.render_mode = ngp.Shade
+        # ref_image = self.ref_frames[i][0]
+        est_image = self.ngp.render(w, h, spp, linear, fps=fps)
+        ic(est_image.shape)
+
+        # ref_image_viz = 255*cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA)
+        est_image_viz = 255*cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
+
+        # TODO: Get ref/est Depth images
+        self.ngp.render_mode = ngp.Depth
+        est_depth = self.ngp.render(w, h, spp, linear, fps=fps)
+        est_depth = est_depth[...,0] # The rest of the channels are the same (and last is 1)
+        # ref_depth = self.ref_frames[i][2].squeeze()
+        # est_to_ref_depth_scale = ref_depth.mean() / est_depth.mean()
+
+        est_depth_viz = np.array(est_depth*1000, dtype=np.uint16)
+
+        # cv2.imwrite(os.path.join(output_dir,f'ref_image_viz_{i}.jpg'), ref_image_viz)        
+        cv2.imwrite(os.path.join(output_dir,f'est_image_viz.jpg'), est_image_viz)        
+        cv2.imwrite(os.path.join(output_dir,f'est_depth_viz.png'), est_depth_viz)        
+
+
+        # self.ngp.shall_train = True
+
+    def create_training_views(self, output_dir='/datasets/project_1/output'):
+        spp = 1 # samples per pixel
+        linear = True
+        fps = 20.0
+
+        # self.ngp.background_color = [0.0, 0.0, 0.0, 1.0]
+        # self.ngp.snap_to_pixel_centers = True
+        # self.ngp.nerf.rendering_min_transmittance = 1e-4
+        # # self.ngp.shall_train = False
+        stride = 10
+
+        ic('Creating training views..')
+        assert(len(self.ref_frames) == self.ngp.nerf.training.n_images_for_training)
+        for i in range(0, self.ngp.nerf.training.n_images_for_training, stride):
+            # Use GT trajectory for evaluation to have consistent metrics.
+            self.ngp.set_camera_to_training_view(i) 
+
+            ref_image = self.ref_frames[i][0]
+            h = ref_image.shape[0]
+            w = ref_image.shape[1]            
+
+            w2c = np.eye(4)
+            w2c[:3,:] = self.ngp.camera_matrix            
+            c2w = np.linalg.inv(w2c)        
+            c2w = ngp_matrix_to_nerf(c2w, scale=self.gt_to_slam_scale) # THIS multiplies by scale = 1 and offset = 0.5
+            pose = matrix2pose(c2w)
+            # ic(pose)
+
+            # ic(self.ngp.camera_matrix) 
+
+            # Get ref/est RGB images
+            self.ngp.render_mode = ngp.Shade
+            # ref_image = self.ref_frames[i][0]
+            est_image = self.ngp.render(w, h, spp, linear, fps=fps)
+            # ic(est_image.shape)
+
+            # ref_image_viz = 255*cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA)
+            est_image_viz = 255*cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
+
+            # TODO: Get ref/est Depth images
+            self.ngp.render_mode = ngp.Depth
+            est_depth = self.ngp.render(w, h, spp, linear, fps=fps)
+            est_depth = est_depth[...,0] # The rest of the channels are the same (and last is 1)
+            # ref_depth = self.ref_frames[i][2].squeeze()
+            # est_to_ref_depth_scale = ref_depth.mean() / est_depth.mean()
+
+            est_depth_viz = np.array(est_depth*1000, dtype=np.uint16)
+        
+            cv2.imwrite(os.path.join(output_dir,f'est_image_viz{i}.jpg'), est_image_viz)        
+            cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{i}.png'), est_depth_viz) 
+
     def eval_gt_traj(self):
+        output_dir='/datasets/project_1/output'
+
         ic(self.total_iters)
 
         spp = 1 # samples per pixel
@@ -412,6 +511,8 @@ class NerfFusion:
         count = 0
         total_l1 = 0
         total_psnr = 0
+        ic(f'test: {len(self.ref_frames) }')
+
         assert(len(self.ref_frames) == self.ngp.nerf.training.n_images_for_training)
         for i in range(0, self.ngp.nerf.training.n_images_for_training, stride):
             # Use GT trajectory for evaluation to have consistent metrics.
@@ -466,11 +567,13 @@ class NerfFusion:
             total_l1 += l1
             count += 1
 
-            ref_image_viz = cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA)
-            est_image_viz = cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
+            ref_image_viz = 255*cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA)
+            est_image_viz = 255*cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
 
-            cv2.imwrite('./datasets/est_image_viz.jpg',255*est_image_viz)
-            cv2.imwrite('./datasets/ref_image_viz.jpg',255*ref_image_viz)
+            est_depth_viz = np.array(est_depth*1000, dtype=np.uint16)
+
+            cv2.imwrite(os.path.join(output_dir,f'est_image_viz{i}.jpg'), est_image_viz)        
+            cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{i}.png'), est_depth_viz) 
 
             if self.viz:
                 ref_image_viz = cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA) # Required for Nerf Fusion, perhaps we can put it in there
@@ -496,3 +599,5 @@ class NerfFusion:
         self.ngp.nerf.rendering_min_transmittance = tmp_rendering_min_transmittance
         self.ngp.camera_matrix               = tmp_cam
         self.ngp.render_mode                 = tmp_render_mode
+
+
