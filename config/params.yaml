@@ -7,8 +7,7 @@ stereo: False
 weights: droid.pth
 buffer: 512
 
-# dataset_dir: /home/zaid/datasets/iwshm2023_data/drone
-# url: localhost:5000
+url: cviss-localization.dynv6.net:5000
 dataset_name: nerf
 
 mask_type: ours
