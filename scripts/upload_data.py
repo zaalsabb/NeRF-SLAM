@@ -6,10 +6,12 @@ import json
 import os
 import sys
 
-def send_query_image(url, I, pose, image_id, project_id=1):
+def send_query_image(url, I, D, pose, image_id, project_id=1):
 
-    data = cv2.imencode('.jpg', I)[1].tobytes()
-    files = {'image':data, 'pose':pose.tobytes()}
+    data1 = cv2.imencode('.jpg', I)[1].tobytes()
+    data2 = cv2.imencode('.png', D)[1].tobytes()
+
+    files = {'image':data1, 'depth':data2, 'pose':pose.tobytes()}
     endpoint = url + f'/api/v1/project/{project_id}/send_ref_image/{image_id}'
     response = requests.post(endpoint, files=files) 
     # response_json = response.json() 
@@ -67,13 +69,19 @@ def main(dataset_dir, url):
     send_query_intrinsics(url, intrinsics)
 
     N = len(os.listdir(os.path.join(dataset_dir , 'rgb')))
-    # N = 30
+    # N = 500
 
     for i in range(1,N):
-        f_image = os.path.join(dataset_dir , 'rgb', f'{i}.png')
+        f_image = os.path.join(dataset_dir , 'rgb', f'{i:06}.jpg')
+        # f_image = os.path.join(dataset_dir , 'rgb', f'{i}.png')
         I = cv2.imread(f_image)
+
+        f_depth = os.path.join(dataset_dir , 'depth', f'{i:06}.png')
+        # f_image = os.path.join(dataset_dir , 'rgb', f'{i}.png')
+        D = cv2.imread(f_depth, cv2.IMREAD_UNCHANGED)
+
         pose = poses[i-1, 1:]
-        send_query_image(url, I, pose, i)
+        send_query_image(url, I, D, pose, i-1)
 
     run_nerf(url)
 

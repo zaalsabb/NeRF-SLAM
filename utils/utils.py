@@ -6,7 +6,10 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from icecream import ic
-import torch
+try:
+    import torch
+except:
+    print('cannot import torch')
 
 def qvec2rotmat(qvec):
     return np.array([

@@ -12,13 +12,16 @@ from icecream import ic
 sys.settrace
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-import torch
-from torch.multiprocessing import Process
+try:
+    import torch
+    from torch.multiprocessing import Process
 
-from datasets.data_module import DataModule
-from gui.gui_module import GuiModule
-from slam.slam_module import SlamModule
-from fusion.fusion_module import FusionModule
+    from data_module import DataModule
+    from gui.gui_module import GuiModule
+    from slam.slam_module import SlamModule
+    from fusion.fusion_module import FusionModule
+except:
+    print('cannot import modules..')
 
 # torch.multiprocessing.set_start_method('spawn')
 # torch.cuda.empty_cache()
@@ -53,10 +56,10 @@ class NerfSLAM():
 
     def run_nerf(self):
         args = self.load_args()
-        torch.multiprocessing.set_start_method('spawn')
-        torch.backends.cudnn.benchmark = True
-        torch.set_grad_enabled(False)        
-        torch.cuda.empty_cache()
+        # torch.multiprocessing.set_start_method('spawn')
+        # torch.backends.cudnn.benchmark = True
+        # torch.set_grad_enabled(False)        
+        # torch.cuda.empty_cache()
         self.run(args)        
 
 
@@ -101,7 +104,7 @@ class NerfSLAM():
         self.save_intrinsics_file()
 
 
-    def save_image(self, image, pose, k):
+    def save_image(self, image, depth, pose, k, save_intrinsics=False):
         if 'frames' not in self.intrinsics:
             self.intrinsics['frames'] = []
         
@@ -117,12 +120,23 @@ class NerfSLAM():
 
         frame = {}
         frame['file_path'] = f"images/frame{k:05}.png"
+        if depth is not None:
+            frame['depth_path'] = f"images/depth{k:05}.png"
+
         frame['transform_matrix'] = pose2matrix(pose).tolist()
         self.intrinsics['frames'].append(frame)
 
         cv2.imwrite(os.path.join(self.dataset_dir,frame['file_path']), cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA))
+        if depth is not None:
+            h = image.shape[0]
+            w = image.shape[1]
+            depth = np.array(depth, dtype=np.uint16)
+            depth = cv2.resize(depth, (w,h), cv2.INTER_NEAREST)
+            cv2.imwrite(os.path.join(self.dataset_dir,frame['depth_path']), depth)
 
-        self.save_intrinsics_file()  
+        # ic(self.intrinsics)
+        if save_intrinsics:
+            self.save_intrinsics_file()  
 
     
     def load_args(self):
@@ -196,7 +210,7 @@ class NerfSLAM():
         gui = args.gui and args.fusion != 'nerf' # nerf has its own gui
         print(f'fusion: {fusion}')
         if gui:        
-            gui_module = GuiModule("NoGui", args, device=cuda_slam) # don't use cuda:1, o3d doesn't work...
+            gui_module = GuiModule("Open3DGui", args, device=cuda_slam) # don't use cuda:1, o3d doesn't work...
             self.data_provider_module.register_output_queue(data_for_viz_output_queue)
             if slam:
                 self.slam_module.register_output_queue(slam_output_queue_for_o3d)
@@ -234,9 +248,9 @@ class NerfSLAM():
             while (fusion and fusion_thread.exitcode == None):
                 continue
             print("FINISHED RUNNING FUSION")
-            # while (gui and not gui_module.shutdown):
-            #     continue
-            # print("FINISHED RUNNING GUI")
+            while (gui and not gui_module.shutdown):
+                continue
+            print("FINISHED RUNNING GUI")
 
             # This is not doing what you think, because Process has another module
             if gui: gui_module.shutdown_module()
@@ -275,6 +289,11 @@ class NerfSLAM():
         # Delete everything and clean memory
 
 if __name__ == '__main__':
+
+    torch.multiprocessing.set_start_method('spawn')
+    torch.cuda.empty_cache()
+    torch.backends.cudnn.benchmark = True
+    torch.set_grad_enabled(False)    
 
     project_id = 1
     dataset_dir = os.path.join(f"/datasets", f"project_{project_id}")

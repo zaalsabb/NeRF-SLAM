@@ -8,7 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import torch
 from torch.multiprocessing import Process
 
-from datasets.data_module import DataModule
+from data_module import DataModule
 from gui.gui_module import GuiModule
 from slam.slam_module import SlamModule
 from fusion.fusion_module import FusionModule
@@ -130,7 +130,7 @@ def run(args):
     gui = args.gui and args.fusion != 'nerf' # nerf has its own gui
     print(f'fusion: {fusion}')
     if gui:        
-        gui_module = GuiModule("NoGui", args, device=cuda_slam) # don't use cuda:1, o3d doesn't work...
+        gui_module = GuiModule("Open3DGui", args, device=cuda_slam) # don't use cuda:1, o3d doesn't work...
         data_provider_module.register_output_queue(data_for_viz_output_queue)
         if slam:
             slam_module.register_output_queue(slam_output_queue_for_o3d)

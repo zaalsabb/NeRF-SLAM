@@ -1,20 +1,17 @@
-parallel_run: False
+parallel_run: True
 multi_gpu: True
 initial_k: 0
 final_k: -1
 img_stride: 2
 stereo: False
 weights: droid.pth
-buffer: 512
-
-url: cviss-localization.dynv6.net:5000
+buffer: 100
 dataset_name: nerf
-
 mask_type: ours
-gui: False
+gui: True
 slam: True
 fusion: nerf 
 width: 0
 height: 0
 network: ""
-eval: True
+eval: False

@@ -67,6 +67,9 @@ def send_ref_image(project_id, image_id):
             img = Image.open(io.BytesIO(flask.request.files["image"].read()))    
             img = np.array(img)
 
+            depth = Image.open(io.BytesIO(flask.request.files["depth"].read()))    
+            depth = np.array(depth)            
+
             if flask.request.files.get("pose"):
                 json_str=flask.request.files["pose"].read()
                 pose = np.frombuffer(json_str, dtype="float")
@@ -74,7 +77,7 @@ def send_ref_image(project_id, image_id):
             else:
                 return flask.make_response("Pose not found", 404)  
 
-            nerfs[project_id].save_image(img, pose, image_id)
+            nerfs[project_id].save_image(img, depth, pose, image_id)
             return flask.make_response(f"Image {image_id} saved successfully")  
         else:
             return flask.make_response("Image not found", 404)            

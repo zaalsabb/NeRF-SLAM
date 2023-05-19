@@ -74,19 +74,19 @@ class NerfFusion:
 
         self.ngp.nerf.training.n_images_for_training = 0;
 
-        # if args.gui:
-        #     # Pick a sensible GUI resolution depending on arguments.
-        #     sw = args.width or 1920
-        #     sh = args.height or 1080
-        #     while sw*sh > 1920*1080*4:
-        #         sw = int(sw / 2)
-        #         sh = int(sh / 2)
-        #     self.ngp.init_window(640, 480, second_window=False)
+        if args.gui:
+            # Pick a sensible GUI resolution depending on arguments.
+            sw = args.width or 1920
+            sh = args.height or 1080
+            while sw*sh > 1920*1080*4:
+                sw = int(sw / 2)
+                sh = int(sh / 2)
+            self.ngp.init_window(640, 480, second_window=False)
 
-        #     # Gui params:
-        #     self.ngp.display_gui = True
-        #     self.ngp.nerf.visualize_cameras = True
-        #     self.ngp.visualize_unit_cube = False
+            # Gui params:
+            self.ngp.display_gui = True
+            self.ngp.nerf.visualize_cameras = True
+            self.ngp.visualize_unit_cube = False
 
         self.ngp.reload_network_from_file(network)
 
@@ -112,7 +112,7 @@ class NerfFusion:
         self.annealing_rate = 0.95
 
         self.evaluate = args.eval
-        self.eval_every_iters = 5000
+        self.eval_every_iters = 1000
         if self.evaluate:
             self.df = pandas.DataFrame(columns=['Iter', 'Dt','PSNR', 'L1', 'count'])
 
@@ -302,8 +302,8 @@ class NerfFusion:
         for _ in range(self.iters):
             self.fit_volume_once()
             self.ngp.apply_camera_smoothing(1000.0/self.fps)
-        if self.evaluate and self.total_iters % self.eval_every_iters == 0:
-            self.create_training_views()
+        # if self.evaluate and self.total_iters % self.eval_every_iters == 0:
+        #     self.create_training_views()
 
     def fit_volume_once(self):
         self.ngp.frame()
@@ -313,7 +313,7 @@ class NerfFusion:
             self.ngp.nerf.training.depth_supervision_lambda *= self.annealing_rate
         if self.evaluate and self.total_iters % self.eval_every_iters == 0:
             print("Evaluate.")
-            # self.eval_gt_traj()
+            self.eval_gt_traj()
         self.total_iters += 1
 
     def evaluate_depth(self):

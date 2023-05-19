@@ -1,13 +1,32 @@
 version: '3.8'
 
 services:
-  api:
+
+## no gui docker image
+  # no_gui:
+  #   build: 
+  #     dockerfile: Dockerfile2
+  #     context: .
+  #     network: host    
+  #   volumes:
+  #       - $HOME/datasets/:/datasets/
+  #   network_mode: "host" 
+
+## gui docker image
+  gui:
     build: 
+      dockerfile: Dockerfile
       context: .
       network: host    
     volumes:
         - $HOME/datasets/:/datasets/
-    network_mode: "host" 
+        - /dev/shm:/dev/shm
+    environment:
+      - RESOLUTION=1920x1080
+    ports:
+      - 6080:80
+
+## gpu allocation
     deploy:
       resources:
         reservations:

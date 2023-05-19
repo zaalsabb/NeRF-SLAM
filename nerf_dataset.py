@@ -125,6 +125,7 @@ class NeRFDataset(Dataset):
                 depth = (-1 * np.ones_like(image[:, :, 0])).astype(np.uint16) # invalid depth
 
             if self.resize_images:
+                print(depth.shape)
                 w1, h1 = self.w1, self.h1
                 image = cv2.resize(image, (w1, h1))
                 depth = cv2.resize(depth, (w1, h1))

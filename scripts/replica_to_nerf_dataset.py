@@ -8,7 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import argparse
 from tqdm import tqdm
 
-from datasets.data_module import DataModule
+from data_module import DataModule
 
 def parse_args():
     parser = argparse.ArgumentParser(description="INSTANT SLAM")

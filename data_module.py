@@ -33,7 +33,7 @@ class DataModule(MIMOPipelineModule):
             from datasets.tum_dataset import TumDataset
             self.dataset = TumDataset(self.args, self.device)
         elif self.name == "nerf":
-            from datasets.nerf_dataset import NeRFDataset
+            from nerf_dataset import NeRFDataset
             self.dataset = NeRFDataset(self.args, self.device)
         elif self.name == "replica":
             from datasets.replica_dataset import ReplicaDataset
