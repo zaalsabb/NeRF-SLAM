@@ -132,8 +132,6 @@ COPY ./fusion /project/NeRF-SLAM/fusion
 COPY ./examples /project/NeRF-SLAM/examples
 COPY ./app.py /project/NeRF-SLAM/app.py
 COPY ./nerf_slam.py /project/NeRF-SLAM/nerf_slam.py
-COPY ./nerf_dataset.py /project/NeRF-SLAM/nerf_dataset.py
-COPY ./data_module.py /project/NeRF-SLAM/data_module.py
 
 # ENTRYPOINT ["python3", "app.py"]
 # CMD ["python3", "nerf_slam.py"]

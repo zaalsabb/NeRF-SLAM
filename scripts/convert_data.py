@@ -5,6 +5,7 @@ import yaml
 import json
 import os
 import sys
+import shutil
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -13,6 +14,7 @@ from nerf_slam import NerfSLAM
 def load_nerf(project_id: int):     
     home = os.environ.get('HOME')
     dataset_dir = os.path.join(f"{home}/datasets", f"project_{project_id}")
+    shutil.rmtree(dataset_dir, ignore_errors=True)
     os.makedirs(dataset_dir, exist_ok=True)
     
     nerf_slam = NerfSLAM(dataset_dir)
