@@ -8,7 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import torch
 from torch.multiprocessing import Process
 
-from data_module import DataModule
+from datasets.data_module import DataModule
 from gui.gui_module import GuiModule
 from slam.slam_module import SlamModule
 from fusion.fusion_module import FusionModule

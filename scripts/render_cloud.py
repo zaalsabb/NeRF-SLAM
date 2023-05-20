@@ -7,6 +7,7 @@ import json
 from scipy.spatial.transform import Rotation
 
 dataset_folder = '/home/uwcviss/datasets/project_1'
+img_id = 0
 
 if os.path.exists(join(dataset_folder, 'intrinsics.json')):
     with open(join(dataset_folder, 'intrinsics.json')) as f:
@@ -15,8 +16,6 @@ if os.path.exists(join(dataset_folder, 'intrinsics.json')):
     w0 = np.array(intrinsics['width'])
 else:
     raise Exception('No intrinsics file found')
-
-img_id = 0
 
 depth = cv2.imread(join(dataset_folder,'output',f'est_depth_viz{img_id}.png'),cv2.IMREAD_UNCHANGED) 
 color = cv2.cvtColor(cv2.imread(join(dataset_folder,'output',f'est_image_viz{img_id}.jpg')), cv2.COLOR_BGR2RGB)

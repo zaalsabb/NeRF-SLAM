@@ -41,11 +41,15 @@ def main(dataset_dir):
 
     for i in range(1,N):
         f_image = os.path.join(dataset_dir , 'rgb', f'{i:06}.jpg')
+        if not os.path.exists(f_image):
+            f_image = os.path.join(dataset_dir , 'rgb', f'{i}.png')
         I = cv2.imread(f_image)
         I = cv2.cvtColor(I, cv2.COLOR_BGRA2RGBA)
 
         if ok_depth:
             f_depth = os.path.join(dataset_dir , 'depth', f'{i:06}.png')
+            if not os.path.exists(f_depth):
+                f_depth = os.path.join(dataset_dir , 'depth', f'{i}.png')            
             D = cv2.imread(f_depth, cv2.IMREAD_UNCHANGED)
         else:
             D = None

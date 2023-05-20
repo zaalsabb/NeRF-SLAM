@@ -12,7 +12,7 @@ import numpy as np
 
 import cv2
 
-from data_module import DataModule
+from datasets.data_module import DataModule
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RealSense Recorder")
