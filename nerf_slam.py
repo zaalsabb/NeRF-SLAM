@@ -8,6 +8,7 @@ import cv2
 from utils.utils import *
 
 from icecream import ic
+import shutil
 
 sys.settrace
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -110,7 +111,7 @@ class NerfSLAM():
         
         self.poses_t.append(pose)
         if len(self.poses_t) > 1: 
-            delta_t = 1.0 # 1 meter extra to allow for the depth of the camera
+            delta_t = 0.0 # 1 meter extra to allow for the depth of the camera
             poses_t = np.array(self.poses_t)
             t_max = np.amax(poses_t, 0).flatten()
             t_min = np.amin(poses_t, 0).flatten()
@@ -138,6 +139,42 @@ class NerfSLAM():
         if save_intrinsics:
             self.save_intrinsics_file()  
 
+    def save_file(self, f_img, f_depth, pose, k, save_intrinsics=False):
+        if 'frames' not in self.intrinsics:
+            self.intrinsics['frames'] = []
+        
+        self.poses_t.append(pose)
+        avglen = 0.
+        if len(self.poses_t) > 1: 
+            delta_t = 0.0 # 1 meter extra to allow for the depth of the camera
+            poses_t = np.array(self.poses_t)
+            t_max = np.amax(poses_t, 0).flatten()
+            t_min = np.amin(poses_t, 0).flatten()
+            self.intrinsics["aabb"] = np.array([t_min-delta_t, t_max+delta_t]).tolist()
+
+            avglen = np.mean(np.linalg.norm(self.poses_t, axis=1))
+            sf = 4.0 / avglen
+        else:
+            self.intrinsics["aabb"]  = np.array([[-2, -2, -2], [2, 2, 2]]).tolist() # Computed automatically
+            sf = 1
+
+        self.intrinsics["scale_trans"] = sf
+
+        frame = {}
+        frame['file_path'] = f"images/frame{k:05}.png"
+        if f_depth is not None:
+            frame['depth_path'] = f"images/depth{k:05}.png"
+
+        frame['transform_matrix'] = pose2matrix(pose).tolist()
+        self.intrinsics['frames'].append(frame)
+
+        shutil.copy(f_img, os.path.join(self.dataset_dir,frame['file_path']))
+        if f_depth is not None:
+            shutil.copy(f_depth, os.path.join(self.dataset_dir,frame['depth_path']))
+
+        # ic(self.intrinsics)
+        if save_intrinsics:
+            self.save_intrinsics_file()
     
     def load_args(self):
 

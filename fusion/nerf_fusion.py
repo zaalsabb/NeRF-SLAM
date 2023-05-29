@@ -15,6 +15,8 @@ import os
 import sys
 import glob
 
+# from plyfile import PlyData, PlyElement
+
 # Search for pyngp in the build folder.
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path += [os.path.dirname(pyd) for pyd in glob.iglob(
@@ -26,6 +28,16 @@ import pyngp as ngp
 import pandas
 
 from utils.utils import *
+
+def round_up_to_base(x, base=10):
+    return x + (base - x) % base
+
+def get_marching_cubes_res(res_1d: int, aabb:  ngp.BoundingBox ) -> np.ndarray:
+    scale = res_1d / (aabb.max - aabb.min).max()
+    res3d = (aabb.max - aabb.min) * scale + 0.5
+    res3d = round_up_to_base(res3d.astype(np.int32), 16)
+    return res3d
+
 
 class NerfFusion:
     def __init__(self, name, args, device) -> None:
@@ -429,6 +441,27 @@ class NerfFusion:
 
         # self.ngp.shall_train = True
 
+    def marching_cubes(self,output_dir):
+        mc = self.ngp.compute_marching_cubes_mesh(resolution=get_marching_cubes_res(512, self.ngp.aabb), aabb=self.ngp.aabb, thresh=2)
+        vertex = np.array(list(zip(*mc["V"].T)), dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4')])
+        vertex_color = np.array(list(zip(*((mc["C"] * 255).T))), dtype=[('red', 'u1'), ('green', 'u1'), ('blue', 'u1')])
+
+        n = len(vertex)
+        assert len(vertex_color) == n
+
+        vertex_all = np.empty(n, vertex.dtype.descr + vertex_color.dtype.descr)
+
+        for prop in vertex.dtype.names:
+            vertex_all[prop] = vertex[prop]
+
+        for prop in vertex_color.dtype.names:
+            vertex_all[prop] = vertex_color[prop]
+
+        ply = PlyData([PlyElement.describe(vertex_all, 'vertex')], text=False)
+
+        ply.write( os.path.join(output_dir,'nerf_pc.ply'))        
+        return mc
+
     def create_training_views(self, output_dir='/datasets/project_1/output'):
         spp = 1 # samples per pixel
         linear = True
@@ -449,15 +482,6 @@ class NerfFusion:
             ref_image = self.ref_frames[i][0]
             h = ref_image.shape[0]
             w = ref_image.shape[1]            
-
-            w2c = np.eye(4)
-            w2c[:3,:] = self.ngp.camera_matrix            
-            c2w = np.linalg.inv(w2c)        
-            c2w = ngp_matrix_to_nerf(c2w, scale=self.gt_to_slam_scale) # THIS multiplies by scale = 1 and offset = 0.5
-            pose = matrix2pose(c2w)
-            # ic(pose)
-
-            # ic(self.ngp.camera_matrix) 
 
             # Get ref/est RGB images
             self.ngp.render_mode = ngp.Shade
@@ -481,7 +505,9 @@ class NerfFusion:
             cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{i}.png'), est_depth_viz) 
 
     def eval_gt_traj(self):
+
         output_dir='/datasets/project_1/output'
+        # self.marching_cubes(output_dir)
 
         ic(self.total_iters)
 
@@ -571,6 +597,7 @@ class NerfFusion:
             est_image_viz = 255*cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
 
             est_depth_viz = np.array(est_depth*1000, dtype=np.uint16)
+            est_depth_viz /= self.ngp.scale_trans # scale back to origin size            
 
             cv2.imwrite(os.path.join(output_dir,f'est_image_viz{i}.jpg'), est_image_viz)        
             cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{i}.png'), est_depth_viz) 

@@ -23,7 +23,8 @@ def load_nerf(project_id: int):
 
 def main(dataset_dir):
     
-    ok_depth = os.path.exists(dataset_dir+'/depth')
+    # ok_depth = os.path.exists(dataset_dir+'/depth')
+    ok_depth = False
 
     nerf = load_nerf(1)
 
@@ -45,19 +46,17 @@ def main(dataset_dir):
         f_image = os.path.join(dataset_dir , 'rgb', f'{i:06}.jpg')
         if not os.path.exists(f_image):
             f_image = os.path.join(dataset_dir , 'rgb', f'{i}.png')
-        I = cv2.imread(f_image)
-        I = cv2.cvtColor(I, cv2.COLOR_BGRA2RGBA)
 
         if ok_depth:
             f_depth = os.path.join(dataset_dir , 'depth', f'{i:06}.png')
             if not os.path.exists(f_depth):
                 f_depth = os.path.join(dataset_dir , 'depth', f'{i}.png')            
-            D = cv2.imread(f_depth, cv2.IMREAD_UNCHANGED)
+            
         else:
-            D = None
+            f_depth = None
 
         pose = poses[i-1, 1:]
-        nerf.save_image(I, D, pose, i-1)
+        nerf.save_file(f_image, f_depth, pose, i-1)
 
         print(f"Processing frame {i}/{N}", end="\r")
 
