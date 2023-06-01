@@ -167,6 +167,11 @@ def scale_offset_poses(poses, scale, offset):  # for c2w poses!
     poses[:, :3, 3] = poses[:, :3, 3] * scale + offset
     return poses
 
+def scale_offset_pose(pose, scale, offset):  # for c2w poses!
+    pose[:3, 3] = pose[:3, 3] * scale + offset
+
+    return pose
+
 
 def mse2psnr(x):
     return -10.*np.log(x)/np.log(10.)

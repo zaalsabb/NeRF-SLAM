@@ -14,6 +14,7 @@ from utils.utils import *
 import os
 import sys
 import glob
+import json
 
 # from plyfile import PlyData, PlyElement
 
@@ -48,18 +49,26 @@ class NerfFusion:
         self.device = device
 
         self.viz = False
+        self.kf_idx_to_f_idx = {}
+        self.poses = {}
 
-        # self.render_path_i = 0
-        # import json
-        # with open(os.path.join(args.dataset_dir, "transforms.json"), 'r') as f:
-        #     self.json = json.load(f)
-        # self.render_path = []
+        self.render_path_i = 0
+        import json
+        with open(os.path.join(args.dataset_dir, "transforms.json"), 'r') as f:
+            self.json = json.load(f)
+        self.render_path = []
         self.gt_to_slam_scale = 1 # We should be calculating this online.... Sim(3) pose alignment
-        # for frame in self.json["frames"]:
-        #     c2w = np.array(frame['transform_matrix'])
-        #     c2w = nerf_matrix_to_ngp(c2w, scale=self.gt_to_slam_scale, offset=0.0) # THIS multiplies by scale = 1 and offset = 0.5
-        #     w2c = np.linalg.inv(c2w)
-        #     self.render_path += [w2c]
+        # sf = self.json["scale_trans"]
+        aabb = np.array(self.json["aabb"])
+        scale, offset = get_scale_and_offset(aabb)
+
+        for frame in self.json["frames"]:
+            c2w = np.array(frame['transform_matrix'])
+            # c2w[:3,3] /= sf
+            c2w = nerf_matrix_to_ngp(c2w, scale=scale, offset=offset)
+            w2c = np.linalg.inv(c2w)
+            # print(w2c)
+            self.render_path += [w2c]
 
         self.iters = 1
         self.iters_if_none = 1
@@ -147,6 +156,9 @@ class NerfFusion:
         packet["depths_cov"]       = np.ones_like(packet["depths"])
         packet["depths_cov_scale"] = 1.0
 
+        # timestamps     = packet["t_cams"]
+        # print(timestamps)        
+
         self.send_data(packet)
         return False
 
@@ -175,6 +187,11 @@ class NerfFusion:
         depths_cov_up  = slam_packet["cam0_depths_cov_up"]
         calibs         = slam_packet["calibs"]
         gt_depths      = slam_packet["gt_depths"]
+        kf_idx_to_f_idx = slam_packet["kf_idx_to_f_idx"]
+        
+        self.kf_idx_to_f_idx = kf_idx_to_f_idx
+        for k in self.kf_idx_to_f_idx.keys():
+            self.kf_idx_to_f_idx[k] = self.kf_idx_to_f_idx[k].tolist()
 
         calib = calibs[0]
         scale, offset = get_scale_and_offset(calib.aabb) # if we happen to change aabb, we are screwed...
@@ -218,6 +235,11 @@ class NerfFusion:
         depths = (1.0 / idepths_up[..., None])
         depths_cov = depths_cov_up[..., None]
         gt_depths = gt_depths.permute(0, 2, 3, 1) * gt_depth_scale * scale
+
+        idx = viz_idx.cpu().numpy()           
+        for i,k in enumerate(idx):
+            w2c = cam0_T_world[i]
+            self.poses[int(k)] = matrix2pose(np.linalg.inv(w2c)).tolist()
 
         # This is extremely slow.
         # TODO: we could do it in cpp/cuda: send the uint8_t image instead of float, and call srgb_to_linear inside the convert_rgba32 function
@@ -325,7 +347,8 @@ class NerfFusion:
             self.ngp.nerf.training.depth_supervision_lambda *= self.annealing_rate
         if self.evaluate and self.total_iters % self.eval_every_iters == 0:
             print("Evaluate.")
-            self.eval_gt_traj()
+            # self.eval_gt_traj()
+            self.create_training_views()
         self.total_iters += 1
 
     def evaluate_depth(self):
@@ -467,42 +490,74 @@ class NerfFusion:
         linear = True
         fps = 20.0
 
-        # self.ngp.background_color = [0.0, 0.0, 0.0, 1.0]
-        # self.ngp.snap_to_pixel_centers = True
-        # self.ngp.nerf.rendering_min_transmittance = 1e-4
-        # # self.ngp.shall_train = False
-        stride = 10
+        # Save the state before evaluation
+        import copy
+        tmp_shall_train = copy.deepcopy(self.ngp.shall_train)
+        tmp_background_color = copy.deepcopy(self.ngp.background_color)
+        tmp_snap_to_pixel_centers = copy.deepcopy(self.ngp.snap_to_pixel_centers)
+        tmp_snap_to_pixel_centers = copy.deepcopy(self.ngp.snap_to_pixel_centers)
+        tmp_rendering_min_transmittance = copy.deepcopy(self.ngp.nerf.rendering_min_transmittance)
+        tmp_cam = self.ngp.camera_matrix.copy()
+        tmp_render_mode = copy.deepcopy(self.ngp.render_mode)
 
-        ic('Creating training views..')
-        assert(len(self.ref_frames) == self.ngp.nerf.training.n_images_for_training)
+        # Modify the state for evaluation
+        self.ngp.background_color = [0.0, 0.0, 0.0, 1.0]
+        self.ngp.snap_to_pixel_centers = True
+        self.ngp.nerf.rendering_min_transmittance = 1e-4
+        self.ngp.shall_train = False        
+
+        # stride = 300
+        stride = 2
+
+        ic('Creating training views...')
         for i in range(0, self.ngp.nerf.training.n_images_for_training, stride):
+        # for i in range(0, len(self.render_path), stride):
+
             # Use GT trajectory for evaluation to have consistent metrics.
+
+            # self.ngp.camera_matrix = self.render_path[i][:3,:]
             self.ngp.set_camera_to_training_view(i) 
 
-            ref_image = self.ref_frames[i][0]
+            if len(self.ref_frames) == 0: break
+            ref_image = self.ref_frames[0][0]
             h = ref_image.shape[0]
             w = ref_image.shape[1]            
 
             # Get ref/est RGB images
             self.ngp.render_mode = ngp.Shade
-            # ref_image = self.ref_frames[i][0]
             est_image = self.ngp.render(w, h, spp, linear, fps=fps)
             # ic(est_image.shape)
 
-            # ref_image_viz = 255*cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA)
             est_image_viz = 255*cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
 
             # TODO: Get ref/est Depth images
             self.ngp.render_mode = ngp.Depth
             est_depth = self.ngp.render(w, h, spp, linear, fps=fps)
             est_depth = est_depth[...,0] # The rest of the channels are the same (and last is 1)
-            # ref_depth = self.ref_frames[i][2].squeeze()
-            # est_to_ref_depth_scale = ref_depth.mean() / est_depth.mean()
 
             est_depth_viz = np.array(est_depth*1000, dtype=np.uint16)
         
+            if not i in self.kf_idx_to_f_idx.keys(): continue
+            
             cv2.imwrite(os.path.join(output_dir,f'est_image_viz{i}.jpg'), est_image_viz)        
             cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{i}.png'), est_depth_viz) 
+
+            ic(f'view: {i}')
+        
+        with open(os.path.join(output_dir, 'poses.json'), 'w') as f:
+            json.dump(self.poses,f)
+
+        with open(os.path.join(output_dir, 'keyframes.json'), 'w') as f:
+            json.dump(self.kf_idx_to_f_idx,f)            
+
+        # Reset the state
+        self.ngp.shall_train                 = tmp_shall_train
+        self.ngp.background_color            = tmp_background_color
+        self.ngp.snap_to_pixel_centers       = tmp_snap_to_pixel_centers
+        self.ngp.snap_to_pixel_centers       = tmp_snap_to_pixel_centers
+        self.ngp.nerf.rendering_min_transmittance = tmp_rendering_min_transmittance
+        self.ngp.camera_matrix               = tmp_cam
+        self.ngp.render_mode                 = tmp_render_mode
 
     def eval_gt_traj(self):
 
@@ -539,12 +594,24 @@ class NerfFusion:
         total_psnr = 0
         ic(f'test: {len(self.ref_frames) }')
 
+        poses = {}
+
         assert(len(self.ref_frames) == self.ngp.nerf.training.n_images_for_training)
         for i in range(0, self.ngp.nerf.training.n_images_for_training, stride):
             # Use GT trajectory for evaluation to have consistent metrics.
             self.ngp.set_camera_to_training_view(i) 
+            # print(self.ngp.camera_matrix)
 
-            # Get ref/est RGB images
+            # get pose
+            w2c = np.eye(4)
+            w2c[:3,:] = self.ngp.camera_matrix            
+            c2w = np.linalg.inv(w2c)        
+            c2w = ngp_matrix_to_nerf(c2w, scale=self.gt_to_slam_scale, offset=0.0) # THIS multiplies by scale = 1 and offset = 0.5
+            pose = matrix2pose(c2w)
+            poses[i] = pose.tolist()
+
+
+            # Get ref/est RGB imageswwwwwwww
             self.ngp.render_mode = ngp.Shade
             ref_image = self.ref_frames[i][0]
             est_image = self.ngp.render(ref_image.shape[1], ref_image.shape[0], spp, linear, fps=fps)
@@ -597,10 +664,12 @@ class NerfFusion:
             est_image_viz = 255*cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
 
             est_depth_viz = np.array(est_depth*1000, dtype=np.uint16)
-            est_depth_viz /= self.ngp.scale_trans # scale back to origin size            
+            # est_depth_viz /= self.json['scale_trans'] # scale back to origin size            
 
-            cv2.imwrite(os.path.join(output_dir,f'est_image_viz{i}.jpg'), est_image_viz)        
-            cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{i}.png'), est_depth_viz) 
+            if not i in self.kf_idx_to_f_idx.keys(): continue
+            f_idx = self.kf_idx_to_f_idx[i]*self.args.img_stride
+            cv2.imwrite(os.path.join(output_dir,f'est_image_viz{f_idx}.jpg'), est_image_viz)        
+            cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{f_idx}.png'), est_depth_viz) 
 
             if self.viz:
                 ref_image_viz = cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA) # Required for Nerf Fusion, perhaps we can put it in there
@@ -610,6 +679,10 @@ class NerfFusion:
 
             if self.viz:
                 cv2.waitKey(1)
+
+        with open(os.path.join(output_dir, 'poses.json'), 'w') as f:
+            json.dump(poses,f)
+            
             
         dt = self.ngp.elapsed_training_time
         psnr = total_psnr / (count or 1)

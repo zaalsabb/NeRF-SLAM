@@ -14,4 +14,4 @@ fusion: nerf
 width: 0
 height: 0
 network: ""
-eval: False
+eval: True

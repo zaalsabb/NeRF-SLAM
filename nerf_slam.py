@@ -143,7 +143,14 @@ class NerfSLAM():
         if 'frames' not in self.intrinsics:
             self.intrinsics['frames'] = []
         
-        self.poses_t.append(pose)
+        c2w = pose2matrix(pose)
+        # Convert from opencv convention to nerf convention
+        # c2w[0:3, 1] *= -1  # flip the y axis
+        # c2w[0:3, 2] *= -1  # flip the z axis
+        # c2w = c2w[[1, 0, 2, 3],:] # swap y and z
+        # # c2w[2, :] *= -1 # flip whole world upside down        
+
+        self.poses_t.append(matrix2pose(c2w))
         avglen = 0.
         if len(self.poses_t) > 1: 
             delta_t = 0.0 # 1 meter extra to allow for the depth of the camera
@@ -165,7 +172,7 @@ class NerfSLAM():
         if f_depth is not None:
             frame['depth_path'] = f"images/depth{k:05}.png"
 
-        frame['transform_matrix'] = pose2matrix(pose).tolist()
+        frame['transform_matrix'] = c2w.tolist()
         self.intrinsics['frames'].append(frame)
 
         shutil.copy(f_img, os.path.join(self.dataset_dir,frame['file_path']))
