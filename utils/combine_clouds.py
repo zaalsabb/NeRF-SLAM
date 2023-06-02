@@ -6,8 +6,9 @@ from os.path import join, dirname, realpath
 import json
 from scipy.spatial.transform import Rotation
 import sys
+from utils.utils import pose2matrix, matrix2pose
 
-def main(buffer=100, stride=4, max_depth=1):
+def combine_clouds(buffer=100, stride=2, max_depth=1):
 
     project_id = 1
     home = os.environ.get('HOME')
@@ -84,24 +85,5 @@ def main(buffer=100, stride=4, max_depth=1):
     o3d.io.write_point_cloud(join(dataset_folder, f'cloud.ply'),pcd)
 
 
-def pose2matrix(pose):
-    p = pose[:3]
-    q = pose[3:]
-    R = Rotation.from_quat(q)
-    T_m_c = np.eye(4)
-    T_m_c[:3, :3] = R.as_matrix()
-    T_m_c[:3, 3] = p
-    return T_m_c
-
-
-def matrix2pose(T_m_c):
-    R = T_m_c[:3,:3]
-    p = T_m_c[:3,3]
-    q = Rotation.from_matrix(R).as_quat()
-
-    pose = np.concatenate([p,q])
-
-    return pose
-
 if __name__ == '__main__':
-    main()
+    combine_clouds()

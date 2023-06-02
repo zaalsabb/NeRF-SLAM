@@ -6,6 +6,7 @@ import json
 import numpy as np
 import cv2
 from utils.utils import *
+from utils.combine_clouds import combine_clouds
 
 from icecream import ic
 import shutil
@@ -24,11 +25,6 @@ try:
 except:
     print('cannot import modules..')
 
-# torch.multiprocessing.set_start_method('spawn')
-# torch.cuda.empty_cache()
-# torch.backends.cudnn.benchmark = True
-# torch.set_grad_enabled(False)
-
 
 class Struct:
     def __init__(self, **entries): 
@@ -44,6 +40,7 @@ class NerfSLAM():
         self.h = 0
         self.d = np.zeros(5)
         self.poses_t = []
+        self.args = None
 
         os.makedirs(self.dataset_dir, exist_ok=True)
         os.makedirs(os.path.join(self.dataset_dir,'images'), exist_ok=True)
@@ -57,10 +54,7 @@ class NerfSLAM():
 
     def run_nerf(self):
         args = self.load_args()
-        # torch.multiprocessing.set_start_method('spawn')
-        # torch.backends.cudnn.benchmark = True
-        # torch.set_grad_enabled(False)        
-        # torch.cuda.empty_cache()
+        self.args = args
         self.run(args)        
 
 
@@ -182,6 +176,10 @@ class NerfSLAM():
         # ic(self.intrinsics)
         if save_intrinsics:
             self.save_intrinsics_file()
+
+    def combine_clouds(self):
+        combine_clouds(buffer=self.args["buffer"], stride=self.args["img_stride"])
+        return os.path.join(self.dataset_dir, 'cloud.pcd')
     
     def load_args(self):
 
@@ -193,7 +191,10 @@ class NerfSLAM():
 
         return args
 
-    
+    def create_training_views(self):
+        # print(self.fusion_module)
+        self.fusion_module.fusion.create_training_views(output_dir=self.output_dir)
+
     def create_view(self, pose):
         self.load_intrinsics_file()
         self.fusion_module.fusion.create_view(pose, self.w, self.h, self.output_dir)

@@ -52,23 +52,23 @@ class NerfFusion:
         self.kf_idx_to_f_idx = {}
         self.poses = {}
 
-        self.render_path_i = 0
-        import json
-        with open(os.path.join(args.dataset_dir, "transforms.json"), 'r') as f:
-            self.json = json.load(f)
-        self.render_path = []
+        # self.render_path_i = 0
+        # import json
+        # with open(os.path.join(args.dataset_dir, "transforms.json"), 'r') as f:
+        #     self.json = json.load(f)
+        # self.render_path = []
         self.gt_to_slam_scale = 1 # We should be calculating this online.... Sim(3) pose alignment
         # sf = self.json["scale_trans"]
-        aabb = np.array(self.json["aabb"])
-        scale, offset = get_scale_and_offset(aabb)
+        # aabb = np.array(self.json["aabb"])
+        # scale, offset = get_scale_and_offset(aabb)
 
-        for frame in self.json["frames"]:
-            c2w = np.array(frame['transform_matrix'])
-            # c2w[:3,3] /= sf
-            c2w = nerf_matrix_to_ngp(c2w, scale=scale, offset=offset)
-            w2c = np.linalg.inv(c2w)
-            # print(w2c)
-            self.render_path += [w2c]
+        # for frame in self.json["frames"]:
+        #     c2w = np.array(frame['transform_matrix'])
+        #     # c2w[:3,3] /= sf
+        #     c2w = nerf_matrix_to_ngp(c2w, scale=scale, offset=offset)
+        #     w2c = np.linalg.inv(c2w)
+        #     # print(w2c)
+        #     self.render_path += [w2c]
 
         self.iters = 1
         self.iters_if_none = 1
@@ -189,9 +189,7 @@ class NerfFusion:
         gt_depths      = slam_packet["gt_depths"]
         kf_idx_to_f_idx = slam_packet["kf_idx_to_f_idx"]
         
-        self.kf_idx_to_f_idx = kf_idx_to_f_idx
-        for k in self.kf_idx_to_f_idx.keys():
-            self.kf_idx_to_f_idx[k] = self.kf_idx_to_f_idx[k].tolist()
+        # self.kf_idx_to_f_idx = kf_idx_to_f_idx
 
         calib = calibs[0]
         scale, offset = get_scale_and_offset(calib.aabb) # if we happen to change aabb, we are screwed...
@@ -236,10 +234,11 @@ class NerfFusion:
         depths_cov = depths_cov_up[..., None]
         gt_depths = gt_depths.permute(0, 2, 3, 1) * gt_depth_scale * scale
 
-        idx = viz_idx.cpu().numpy()           
-        for i,k in enumerate(idx):
-            w2c = cam0_T_world[i]
-            self.poses[int(k)] = matrix2pose(np.linalg.inv(w2c)).tolist()
+        # idx = viz_idx.cpu().numpy()           
+        # for i,k in enumerate(idx):            
+        #     if not int(k) in self.poses:
+        #         w2c = cam0_T_world[i]
+        #         self.poses[int(k)] = matrix2pose(np.linalg.inv(w2c)).tolist()
 
         # This is extremely slow.
         # TODO: we could do it in cpp/cuda: send the uint8_t image instead of float, and call srgb_to_linear inside the convert_rgba32 function
@@ -547,6 +546,8 @@ class NerfFusion:
         with open(os.path.join(output_dir, 'poses.json'), 'w') as f:
             json.dump(self.poses,f)
 
+        for k in self.kf_idx_to_f_idx.keys():
+            self.kf_idx_to_f_idx[k] = self.kf_idx_to_f_idx[k].tolist()
         with open(os.path.join(output_dir, 'keyframes.json'), 'w') as f:
             json.dump(self.kf_idx_to_f_idx,f)            
 

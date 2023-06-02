@@ -25,6 +25,7 @@ services:
       - RESOLUTION=1920x1080
     ports:
       - 6080:80
+      - 5000:5000
 
 ## gpu allocation
     deploy:

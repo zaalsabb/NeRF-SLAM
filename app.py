@@ -1,5 +1,6 @@
 import os
 import flask
+from multiprocessing import Process
 from threading import Thread
 import sys
 from nerf_slam import NerfSLAM
@@ -7,10 +8,12 @@ import numpy as np
 import PIL.Image as Image
 import io
 from icecream import ic
-
+import torch
+import time
 
 app = flask.Flask(__name__)
 nerfs = {}
+commands = {}
     
 def load_nerf(project_id: int):     
     dataset_dir = os.path.join(f"/datasets", f"project_{project_id}")
@@ -24,10 +27,13 @@ app.logger.info("NeRF SLAM server ready")
 
 @app.route("/nerfslam/api/v1/project/<int:project_id>/load")
 def load_project(project_id):
-    nerf = load_nerf(project_id)
-    if nerf is None:
-        return flask.make_response("Project not found", 404)
-    nerfs[project_id] = nerf
+    # nerf = load_nerf(project_id)
+    # if nerf is None:
+    #     return flask.make_response("Project not found", 404)
+    # nerfs[project_id] = nerf
+
+    commands[project_id] = "load"
+
     print(f'Loaded project {project_id}')    
     return flask.make_response("Project loaded successfully")
 
@@ -86,17 +92,29 @@ def send_ref_image(project_id, image_id):
 
 @app.route("/nerfslam/api/v1/project/<int:project_id>/run_nerf")
 def run_nerf(project_id):
-    if project_id not in nerfs:
-        return flask.make_response("Project not loaded", 404)
-    else:
+    # if project_id not in nerfs:
+    #     return flask.make_response("Project not loaded", 404)
 
-        thread = Thread(
-            target=run_nerf_background, args=(project_id,)
-        )
-        thread.start()
+    # thread = Thread(target=run_nerf_background, args=(project_id,))
+    # thread.start()
+    # proc = Process(target=run_nerf_background, args=(project_id,))
+    # proc.start()
+    commands[project_id] = "run"
 
-        return flask.make_response("Running nerf...")
-    pass
+    return flask.make_response("Running nerf...")
+
+@app.route("/nerfslam/api/v1/project/<int:project_id>/download_cloud", methods=["POST"])
+def download_cloud(project_id):
+
+    # if project_id not in nerfs:
+    #     return flask.make_response("Project not loaded", 404)    
+
+    # nerfs[project_id].create_training_views()
+    # fpath = nerfs[project_id].combine_clouds()
+
+    commands[project_id] = "download_cloud"
+
+    return flask.make_response("creating view...")
 
 @app.route("/nerfslam/api/v1/project/<int:project_id>/create_nerf_view", methods=["POST"])
 def create_nerf_view(project_id):
@@ -117,9 +135,37 @@ def create_nerf_view(project_id):
 
 
 def run_nerf_background(project_id):
+    nerf = load_nerf(project_id)
+    nerfs[project_id] = nerf    
+
     nerfs[project_id].run_nerf()
 
+def web():
+    app.run(host='::',port=5000, debug=True, use_reloader=False) 
 
 if __name__ == "__main__":
-    #app.run(host='0.0.0.0',port=5000)
-    app.run(host='::',port=5000, debug=True)    
+    torch.multiprocessing.set_start_method('spawn')
+    torch.cuda.empty_cache()
+    torch.backends.cudnn.benchmark = True
+    torch.set_grad_enabled(False)
+
+    Thread(target=web, daemon=True).start()
+
+    while True:
+
+        for project_id in list(commands):
+
+            com = commands[project_id]
+
+            if com == "load":
+                nerfs[project_id] = load_nerf(project_id)
+            elif com == "run":
+                nerfs[project_id].run_nerf()
+            elif com == "download_cloud":
+                nerfs[project_id].create_training_views()
+                fpath = nerfs[project_id].combine_clouds()                  
+
+            commands.pop(project_id)
+        time.sleep(1)    
+
+       
