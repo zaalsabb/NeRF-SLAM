@@ -27,10 +27,10 @@ app.logger.info("NeRF SLAM server ready")
 
 @app.route("/nerfslam/api/v1/project/<int:project_id>/load")
 def load_project(project_id):
-    # nerf = load_nerf(project_id)
-    # if nerf is None:
-    #     return flask.make_response("Project not found", 404)
-    # nerfs[project_id] = nerf
+    nerf = load_nerf(project_id)
+    if nerf is None:
+        return flask.make_response("Project not found", 404)
+    nerfs[project_id] = nerf
 
     commands[project_id] = "load"
 
@@ -103,16 +103,16 @@ def run_nerf(project_id):
 
     return flask.make_response("Running nerf...")
 
-@app.route("/nerfslam/api/v1/project/<int:project_id>/download_cloud", methods=["POST"])
+@app.route("/nerfslam/api/v1/project/<int:project_id>/download_cloud")
 def download_cloud(project_id):
 
-    # if project_id not in nerfs:
-    #     return flask.make_response("Project not loaded", 404)    
+    if project_id not in nerfs:
+        return flask.make_response("Project not loaded", 404)    
 
-    # nerfs[project_id].create_training_views()
-    # fpath = nerfs[project_id].combine_clouds()
+    nerfs[project_id].create_training_views()
+    fpath = nerfs[project_id].combine_clouds()
 
-    commands[project_id] = "download_cloud"
+    # commands[project_id] = "download_cloud"
 
     return flask.make_response("creating view...")
 
@@ -133,7 +133,6 @@ def create_nerf_view(project_id):
         return flask.make_response("Invalid request", 404)
 
 
-
 def run_nerf_background(project_id):
     nerf = load_nerf(project_id)
     nerfs[project_id] = nerf    
@@ -149,8 +148,8 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     torch.set_grad_enabled(False)
 
-    Thread(target=web, daemon=True).start()
 
+    Thread(target=web, daemon=True).start()
     while True:
 
         for project_id in list(commands):
@@ -168,4 +167,5 @@ if __name__ == "__main__":
             commands.pop(project_id)
         time.sleep(1)    
 
-       
+    # app.run(host='::',port=5000, debug=True) 
+

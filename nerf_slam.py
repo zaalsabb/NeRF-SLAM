@@ -40,7 +40,6 @@ class NerfSLAM():
         self.h = 0
         self.d = np.zeros(5)
         self.poses_t = []
-        self.args = None
 
         os.makedirs(self.dataset_dir, exist_ok=True)
         os.makedirs(os.path.join(self.dataset_dir,'images'), exist_ok=True)
@@ -54,7 +53,6 @@ class NerfSLAM():
 
     def run_nerf(self):
         args = self.load_args()
-        self.args = args
         self.run(args)        
 
 
@@ -178,7 +176,8 @@ class NerfSLAM():
             self.save_intrinsics_file()
 
     def combine_clouds(self):
-        combine_clouds(buffer=self.args["buffer"], stride=self.args["img_stride"])
+        args = self.load_args()
+        combine_clouds(buffer=args["buffer"], stride=args["img_stride"])
         return os.path.join(self.dataset_dir, 'cloud.pcd')
     
     def load_args(self):
