@@ -16,6 +16,7 @@ import sys
 import glob
 import json
 
+from scipy.optimize import least_squares
 # from plyfile import PlyData, PlyElement
 
 # Search for pyngp in the build folder.
@@ -51,6 +52,9 @@ class NerfFusion:
         self.viz = False
         self.kf_idx_to_f_idx = {}
         self.poses = {}
+        self.n_kf = 0
+        self.T_d_w = None
+        self.nerf_scale = 1
 
         # self.render_path_i = 0
         import json
@@ -349,6 +353,14 @@ class NerfFusion:
             print("Evaluate.")
             # self.eval_gt_traj()
             self.create_training_views()
+        if self.total_iters % self.args.create_view_per_iters == 0 and self.total_iters > 0:
+            output_dir = self.args.dataset_dir
+            if os.path.exists(os.path.join(self.args.dataset_dir, "query_pose.json")):               
+                with open(os.path.join(self.args.dataset_dir, "query_pose.json"), 'r') as f:
+                    pose_dict = json.load(f)
+                    pose = np.array(pose_dict['pose'])
+                self.create_view(pose, self.json["w"], self.json["h"], output_dir)
+            
         self.total_iters += 1
 
     def evaluate_depth(self):
@@ -421,21 +433,120 @@ class NerfFusion:
         #ic(self.ngp.nerf.training.dataset.transforms[0].start)
         #ic(self.ngp.nerf.training.dataset.transforms[0].end)
 
+
+    def compute_scale(self):
+
+        scale_l = []
+
+        for img_id in self.poses.keys():
+
+            pose = np.array(self.poses[img_id])
+
+            # gt pose
+            f_idx = self.kf_idx_to_f_idx[img_id] * self.args.img_stride
+            t = self.json["frames"][f_idx]
+            T_wc = np.array(t["transform_matrix"])
+            pose_gt = matrix2pose(T_wc)        
+
+            if img_id == 0:
+                pose0 = pose
+                pose_gt0 = pose_gt
+            else:
+                scale_l.append(np.linalg.norm(pose_gt[:3]-pose_gt0[:3]) / np.linalg.norm(pose[:3]-pose0[:3]))
+
+        if len (scale_l) == 0:
+            scale = 0
+        else:
+            scale = np.mean(scale_l)
+        # print(scale_l)
+        print(f'scale: {scale}')
+
+        return scale        
+
+    def fit_scale_error(self,x,t1,t2):
+        s = x[0]
+        pose = x[1:]
+        T_m1_m2 = pose2matrix(pose, scale=s)
+        t2_ = np.hstack([t2, np.ones((t2.shape[0],1))])
+        t2_ = (T_m1_m2 @ t2_.T).T
+        t2 = t2_[:,:3] / (t2_[:,3].reshape((-1,1)))
+        t = t1 - t2
+        return np.sum(np.linalg.norm(t,axis=1))
+
+    def fit_scale(self):
+        if len(self.poses) < 7:
+            return None, None
+        
+        poses_d = []
+        poses_m1 = []
+
+        for img_id in self.poses.keys():
+
+            pose_d = np.array(self.poses[img_id])
+
+            # gt pose
+            f_idx = self.kf_idx_to_f_idx[img_id] * self.args.img_stride
+            t = self.json["frames"][f_idx]
+            T_wc = nerf_matrix_to_ngp(np.array(t["transform_matrix"]))
+            pose_m1 = matrix2pose(T_wc)        
+            
+            poses_m1.append(pose_m1)
+            poses_d.append(pose_d)
+
+        poses_d = np.array(poses_d)
+        poses_m1 = np.array(poses_m1)
+
+        t_m1 = poses_m1[:,:3]
+        t_d = poses_d[:,:3]
+        
+        x0 = [1,0,0,0,0,0,0,1]
+        res=least_squares(self.fit_scale_error, x0,args=(t_d, t_m1))
+
+        s = res.x[0]
+        pose = res.x[1:]
+        T_d_m1 = pose2matrix(pose, scale=s)
+        
+        return T_d_m1, s
+
     def create_view(self, pose, w, h, output_dir):
+
+        if len(self.poses) > self.n_kf or self.T_d_w is None:
+            self.n_kf = len(self.poses)
+            self.T_d_w, self.nerf_scale = self.fit_scale()
+
+        if self.T_d_w is None:
+            return
+
         spp = 1 # samples per pixel
         linear = True
         fps = 20.0
 
+        s = float(w) / 640.0
+        w = int(float(w) / s)
+        h = int(float(h) / s)
+
+        # Save the state before evaluation
+        import copy
+        tmp_shall_train = copy.deepcopy(self.ngp.shall_train)
+        tmp_background_color = copy.deepcopy(self.ngp.background_color)
+        tmp_snap_to_pixel_centers = copy.deepcopy(self.ngp.snap_to_pixel_centers)
+        tmp_snap_to_pixel_centers = copy.deepcopy(self.ngp.snap_to_pixel_centers)
+        tmp_rendering_min_transmittance = copy.deepcopy(self.ngp.nerf.rendering_min_transmittance)
+        tmp_cam = self.ngp.camera_matrix.copy()
+        tmp_render_mode = copy.deepcopy(self.ngp.render_mode)
+
+        # Modify the state for evaluation
         self.ngp.background_color = [0.0, 0.0, 0.0, 1.0]
         self.ngp.snap_to_pixel_centers = True
         self.ngp.nerf.rendering_min_transmittance = 1e-4
-        # # self.ngp.shall_train = False
+        self.ngp.shall_train = False  
 
-        c2w = pose2matrix(pose)
-        c2w = nerf_matrix_to_ngp(c2w, scale=self.gt_to_slam_scale) # THIS multiplies by scale = 1 and offset = 0.5
-        w2c = np.linalg.inv(c2w)        
+        T_w_c = nerf_matrix_to_ngp(pose2matrix(pose))
+        T_d_c = self.T_d_w @ T_w_c
+        ic(matrix2pose(T_d_c))
+        # T_d_c = nerf_matrix_to_ngp(T_d_c, scale=1, offset=0)
 
-        self.ngp.camera_matrix = w2c[:3,:]
+        self.ngp.camera_matrix = T_d_c[:3,:]
         # self.ngp.set_camera_to_training_view(0)
         # ic(self.ngp.camera_matrix) 
 
@@ -443,10 +554,12 @@ class NerfFusion:
         self.ngp.render_mode = ngp.Shade
         # ref_image = self.ref_frames[i][0]
         est_image = self.ngp.render(w, h, spp, linear, fps=fps)
+
         ic(est_image.shape)
 
         # ref_image_viz = 255*cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA)
         est_image_viz = 255*cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
+        est_image_viz = cv2.rotate(est_image_viz, cv2.ROTATE_180)
 
         # TODO: Get ref/est Depth images
         self.ngp.render_mode = ngp.Depth
@@ -455,14 +568,21 @@ class NerfFusion:
         # ref_depth = self.ref_frames[i][2].squeeze()
         # est_to_ref_depth_scale = ref_depth.mean() / est_depth.mean()
 
-        est_depth_viz = np.array(est_depth*1000, dtype=np.uint16)
+        est_depth_viz = np.array(est_depth*1000/self.nerf_scale, dtype=np.uint16)
+        est_depth_viz = cv2.rotate(est_depth_viz, cv2.ROTATE_180)
 
         # cv2.imwrite(os.path.join(output_dir,f'ref_image_viz_{i}.jpg'), ref_image_viz)        
         cv2.imwrite(os.path.join(output_dir,f'est_image_viz.jpg'), est_image_viz)        
         cv2.imwrite(os.path.join(output_dir,f'est_depth_viz.png'), est_depth_viz)        
 
-
-        # self.ngp.shall_train = True
+        # Reset the state
+        self.ngp.shall_train                 = tmp_shall_train
+        self.ngp.background_color            = tmp_background_color
+        self.ngp.snap_to_pixel_centers       = tmp_snap_to_pixel_centers
+        self.ngp.snap_to_pixel_centers       = tmp_snap_to_pixel_centers
+        self.ngp.nerf.rendering_min_transmittance = tmp_rendering_min_transmittance
+        self.ngp.camera_matrix               = tmp_cam
+        self.ngp.render_mode                 = tmp_render_mode
 
     def marching_cubes(self,output_dir):
         mc = self.ngp.compute_marching_cubes_mesh(resolution=get_marching_cubes_res(512, self.ngp.aabb), aabb=self.ngp.aabb, thresh=2)
@@ -703,32 +823,3 @@ class NerfFusion:
         self.ngp.camera_matrix               = tmp_cam
         self.ngp.render_mode                 = tmp_render_mode
 
-
-    def compute_scale(self):
-
-        scale_l = []
-
-        for img_id in self.poses.keys():
-
-            pose = np.array(self.poses[img_id])
-
-            # gt pose
-            f_idx = self.kf_idx_to_f_idx[img_id] * self.args.img_stride
-            t = self.json["frames"][f_idx]
-            T_wc = np.array(t["transform_matrix"])
-            pose_gt = matrix2pose(T_wc)        
-
-            if img_id == 0:
-                pose0 = pose
-                pose_gt0 = pose_gt
-            else:
-                scale_l.append(np.linalg.norm(pose_gt[:3]-pose_gt0[:3]) / np.linalg.norm(pose[:3]-pose0[:3]))
-
-        if len (scale_l) == 0:
-            scale = 0
-        else:
-            scale = np.mean(scale_l)
-        # print(scale_l)
-        print(f'scale: {scale}')
-
-        return scale

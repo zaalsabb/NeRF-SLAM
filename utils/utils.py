@@ -104,10 +104,11 @@ def get_bias(euroc_df):
 
 
 # offse's default is 0.5 bcs we scale/offset poses to 1.0/0.5 before feeding to nerf
-def nerf_matrix_to_ngp(nerf_matrix, scale=1.0, offset=0.5): 
+def nerf_matrix_to_ngp(nerf_matrix, scale=1.0, offset=0.0): 
     result = nerf_matrix.copy()
+    result[:3, 0] *= -1
     result[:3, 1] *= -1
-    result[:3, 2] *= -1
+    result[:3, 2] *= 1
     result[:3, 3] = result[:3, 3] * scale + offset
 
     # Cycle axes xyz<-yzx
@@ -196,16 +197,21 @@ def compute_error(img, ref):
     return mean
 
 
-def pose2matrix(pose):
+def pose2matrix(pose, scale=1):
     p = pose[:3]
     q = pose[3:]
     R = Rotation.from_quat(q)
     T_m_c = np.eye(4)
     T_m_c[:3, :3] = R.as_matrix()
     T_m_c[:3, 3] = p
+    T_m_c = np.diag([scale, scale, scale, 1]) @ T_m_c
     return T_m_c
 
 def matrix2pose(T_m_c):
+
+    if isinstance(T_m_c, list):
+        T_m_c = np.array(T_m_c)
+
     R = T_m_c[:3,:3]
     p = T_m_c[:3,3]
     q = Rotation.from_matrix(R).as_quat()

@@ -50,6 +50,10 @@ class NerfSLAM():
         self.data_module = None    
 
         self.output_dir = os.path.join(self.dataset_dir,'output')
+        self.pose_file = os.path.join(self.output_dir, 'query_pose.json')
+
+        if os.path.exists(self.intrinsics_file):
+            self.load_intrinsics_file()
 
     def run_nerf(self):
         args = self.load_args()
@@ -195,8 +199,10 @@ class NerfSLAM():
         self.fusion_module.fusion.create_training_views(output_dir=self.output_dir)
 
     def create_view(self, pose):
-        self.load_intrinsics_file()
-        self.fusion_module.fusion.create_view(pose, self.w, self.h, self.output_dir)
+        # self.fusion_module.fusion.create_view(pose, self.w, self.h, self.output_dir)
+        pose_dict = {'pose': pose.tolist()}
+        with open(self.pose_file, 'w') as f:
+            json.dump(pose_dict, f)           
     
     def run(self, args):
         if args.parallel_run and args.multi_gpu:

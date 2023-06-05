@@ -148,7 +148,6 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     torch.set_grad_enabled(False)
 
-
     Thread(target=web, daemon=True).start()
     while True:
 
@@ -159,6 +158,7 @@ if __name__ == "__main__":
             if com == "load":
                 nerfs[project_id] = load_nerf(project_id)
             elif com == "run":
+                nerfs[project_id] = load_nerf(project_id)
                 nerfs[project_id].run_nerf()
             elif com == "download_cloud":
                 nerfs[project_id].create_training_views()

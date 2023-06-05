@@ -24,9 +24,8 @@ def load_args():
     return args
 
 def main():
-    args = load_args()
-    dataset_dir = args['dataset_dir']
-    url = 'http://'+ args['url']+'/nerfslam'
+
+    url = 'http://localhost:5000/nerfslam'
 
     # pose = {'pose':[0.00995646, -0.47473243, -0.47473243,  0.94340211,  0.07508623, -0.04807876,  0.31944163]}
     pose = {'pose':[0,0,0, 0,0,0,1]}
