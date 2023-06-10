@@ -55,6 +55,7 @@ class NerfFusion:
         self.n_kf = 0
         self.T_d_w = None
         self.nerf_scale = 1
+        self.prev_pose = np.array([0,0,0,0,0,0,1])
 
         # self.render_path_i = 0
         import json
@@ -353,13 +354,14 @@ class NerfFusion:
             print("Evaluate.")
             # self.eval_gt_traj()
             self.create_training_views()
-        if self.total_iters % self.args.create_view_per_iters == 0 and self.total_iters > 0:
-            output_dir = self.args.dataset_dir
+        if self.total_iters % 1 == 0 and self.total_iters > 0:
+            output_dir = os.path.join(self.args.dataset_dir,'output')
             if os.path.exists(os.path.join(self.args.dataset_dir, "query_pose.json")):               
                 with open(os.path.join(self.args.dataset_dir, "query_pose.json"), 'r') as f:
                     pose_dict = json.load(f)
-                    pose = np.array(pose_dict['pose'])
-                self.create_view(pose, self.json["w"], self.json["h"], output_dir)
+                pose = np.array(pose_dict['pose'])
+                if not np.all(pose == self.prev_pose):
+                    self.create_view(pose, self.json["w"], self.json["h"], output_dir)
             
         self.total_iters += 1
 
@@ -505,6 +507,8 @@ class NerfFusion:
         s = res.x[0]
         pose = res.x[1:]
         T_d_m1 = pose2matrix(pose, scale=s)
+
+        # s = self.compute_scale()
         
         return T_d_m1, s
 
@@ -516,6 +520,8 @@ class NerfFusion:
 
         if self.T_d_w is None:
             return
+        
+        ic(f'scale: {self.nerf_scale }')
 
         spp = 1 # samples per pixel
         linear = True
@@ -541,10 +547,9 @@ class NerfFusion:
         self.ngp.nerf.rendering_min_transmittance = 1e-4
         self.ngp.shall_train = False  
 
-        T_w_c = nerf_matrix_to_ngp(pose2matrix(pose))
+        T_w_c0 = pose2matrix(pose)
+        T_w_c = nerf_matrix_to_ngp(T_w_c0)
         T_d_c = self.T_d_w @ T_w_c
-        ic(matrix2pose(T_d_c))
-        # T_d_c = nerf_matrix_to_ngp(T_d_c, scale=1, offset=0)
 
         self.ngp.camera_matrix = T_d_c[:3,:]
         # self.ngp.set_camera_to_training_view(0)
@@ -568,12 +573,13 @@ class NerfFusion:
         # ref_depth = self.ref_frames[i][2].squeeze()
         # est_to_ref_depth_scale = ref_depth.mean() / est_depth.mean()
 
-        est_depth_viz = np.array(est_depth*1000/self.nerf_scale, dtype=np.uint16)
+        est_depth_viz = np.array(est_depth*1000 / self.nerf_scale * 3, dtype=np.uint16)
         est_depth_viz = cv2.rotate(est_depth_viz, cv2.ROTATE_180)
 
         # cv2.imwrite(os.path.join(output_dir,f'ref_image_viz_{i}.jpg'), ref_image_viz)        
         cv2.imwrite(os.path.join(output_dir,f'est_image_viz.jpg'), est_image_viz)        
         cv2.imwrite(os.path.join(output_dir,f'est_depth_viz.png'), est_depth_viz)        
+        np.savetxt( os.path.join(output_dir,'T_w_c.txt') , T_w_c0)
 
         # Reset the state
         self.ngp.shall_train                 = tmp_shall_train
@@ -583,6 +589,9 @@ class NerfFusion:
         self.ngp.nerf.rendering_min_transmittance = tmp_rendering_min_transmittance
         self.ngp.camera_matrix               = tmp_cam
         self.ngp.render_mode                 = tmp_render_mode
+        
+        # set prev pose
+        self.prev_pose = pose
 
     def marching_cubes(self,output_dir):
         mc = self.ngp.compute_marching_cubes_mesh(resolution=get_marching_cubes_res(512, self.ngp.aabb), aabb=self.ngp.aabb, thresh=2)

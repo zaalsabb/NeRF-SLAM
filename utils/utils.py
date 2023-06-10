@@ -201,10 +201,10 @@ def pose2matrix(pose, scale=1):
     p = pose[:3]
     q = pose[3:]
     R = Rotation.from_quat(q)
+    sR = np.diag([scale, scale, scale]) @ R.as_matrix()
     T_m_c = np.eye(4)
-    T_m_c[:3, :3] = R.as_matrix()
+    T_m_c[:3, :3] = sR
     T_m_c[:3, 3] = p
-    T_m_c = np.diag([scale, scale, scale, 1]) @ T_m_c
     return T_m_c
 
 def matrix2pose(T_m_c):

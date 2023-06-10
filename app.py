@@ -10,6 +10,9 @@ import io
 from icecream import ic
 import torch
 import time
+import json
+import cv2
+import zipfile
 
 app = flask.Flask(__name__)
 nerfs = {}
@@ -25,7 +28,7 @@ def load_nerf(project_id: int):
 
 app.logger.info("NeRF SLAM server ready")
 
-@app.route("/nerfslam/api/v1/project/<int:project_id>/load")
+@app.route("/nerfslam/<int:project_id>/load")
 def load_project(project_id):
     nerf = load_nerf(project_id)
     if nerf is None:
@@ -37,7 +40,7 @@ def load_project(project_id):
     print(f'Loaded project {project_id}')    
     return flask.make_response("Project loaded successfully")
 
-@app.route("/nerfslam/api/v1/project/<int:project_id>/send_intrinsics", methods=["POST"])
+@app.route("/nerfslam/<int:project_id>/send_intrinsics", methods=["POST"])
 def send_intrinsics(project_id):
     # recieve camera matrix and save it to the project folder
     if flask.request.method == "POST":
@@ -55,13 +58,8 @@ def send_intrinsics(project_id):
     else:
         return flask.make_response("Invalid request", 404)
 
-@app.route("/nerfslam/api/v1/project/<int:project_id>/send_ref_poses", methods=["POST"])
-def send_ref_poses(project_id):
-    # recieve poses to scale of reference images
-    # use these poses to correct the scale of the nerf model and localize it in the scene 
-    pass
 
-@app.route("/nerfslam/api/v1/project/<int:project_id>/send_ref_image/<int:image_id>", methods=["POST"])
+@app.route("/nerfslam/<int:project_id>/send_ref_image/<int:image_id>", methods=["POST"])
 def send_ref_image(project_id, image_id):
     # recieve image and save it to the project folder
     # keep track of image id
@@ -90,7 +88,7 @@ def send_ref_image(project_id, image_id):
     else:
         return flask.make_response("Invalid request", 404)
 
-@app.route("/nerfslam/api/v1/project/<int:project_id>/run_nerf")
+@app.route("/nerfslam/<int:project_id>/run_nerf")
 def run_nerf(project_id):
     # if project_id not in nerfs:
     #     return flask.make_response("Project not loaded", 404)
@@ -103,35 +101,58 @@ def run_nerf(project_id):
 
     return flask.make_response("Running nerf...")
 
-@app.route("/nerfslam/api/v1/project/<int:project_id>/download_cloud")
-def download_cloud(project_id):
 
-    if project_id not in nerfs:
-        return flask.make_response("Project not loaded", 404)    
-
-    nerfs[project_id].create_training_views()
-    fpath = nerfs[project_id].combine_clouds()
-
-    # commands[project_id] = "download_cloud"
-
-    return flask.make_response("creating view...")
-
-@app.route("/nerfslam/api/v1/project/<int:project_id>/create_nerf_view", methods=["POST"])
+@app.route("/nerfslam/<int:project_id>/create_nerf_view", methods=["POST"])
 def create_nerf_view(project_id):
     # receive pose
     # create nerf view
     # return rgb and depth images
 
-    if flask.request.method == "POST":
-        if "pose" in flask.request.json:
-            pose = np.array(flask.request.json["pose"])  
-            nerfs[project_id].create_view(pose)
-            return flask.make_response("creating view...")
-        else:
-            return flask.make_response("pose not found", 404)
-    else:
+    if not flask.request.method == "POST":
         return flask.make_response("Invalid request", 404)
+    
+    if not "pose" in flask.request.json:
+        return flask.make_response("pose not found", 404)
 
+    dataset_dir = os.path.join(f"/datasets", f"project_{project_id}")
+    output_dir = os.path.join(dataset_dir, 'output')
+
+    pose_path = os.path.join(dataset_dir, 'query_pose.json')
+
+    with open(pose_path, 'w') as f:
+        json.dump(flask.request.json, f)      
+
+    # watch for output file changes
+    cached_stamp = None
+    f_Twc = os.path.join(output_dir, 'T_w_c.txt')
+    timeout = 100
+    t1 = time.time()
+    while time.time() - t1 < timeout:
+        if not os.path.exists(f_Twc):
+            continue
+        
+        if cached_stamp is None:
+            cached_stamp = os.stat(f_Twc).st_mtime
+
+        if os.stat(f_Twc).st_mtime != cached_stamp:
+            break
+
+    f_img   = os.path.join(output_dir, 'est_image_viz.jpg')
+    f_depth = os.path.join(output_dir, 'est_depth_viz.png')
+
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, mode='w') as z:
+        for f in [f_img, f_depth, f_Twc]:
+            z.write(f)
+
+    data.seek(0)
+    return flask.send_file(
+        data,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='data.zip'
+    )    
+    
 
 def run_nerf_background(project_id):
     nerf = load_nerf(project_id)
@@ -158,11 +179,8 @@ if __name__ == "__main__":
             if com == "load":
                 nerfs[project_id] = load_nerf(project_id)
             elif com == "run":
-                nerfs[project_id] = load_nerf(project_id)
-                nerfs[project_id].run_nerf()
-            elif com == "download_cloud":
-                nerfs[project_id].create_training_views()
-                fpath = nerfs[project_id].combine_clouds()                  
+                # nerfs[project_id] = load_nerf(project_id)
+                nerfs[project_id].run_nerf()                 
 
             commands.pop(project_id)
         time.sleep(1)    

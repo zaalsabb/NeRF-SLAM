@@ -6,7 +6,6 @@ import json
 import numpy as np
 import cv2
 from utils.utils import *
-from utils.combine_clouds import combine_clouds
 
 from icecream import ic
 import shutil
@@ -34,6 +33,7 @@ class NerfSLAM():
     def __init__(self, dataset_dir):
         self.dataset_dir = dataset_dir
         self.intrinsics_file = os.path.join(self.dataset_dir, 'transforms.json')
+        self.query_pose_file = os.path.join(self.dataset_dir, 'query_pose.json')
         self.intrinsics = {}
         self.K = np.eye(3)
         self.w = 0
@@ -62,7 +62,7 @@ class NerfSLAM():
 
     def save_intrinsics_file(self):
         with open(self.intrinsics_file, 'w') as f:
-            json.dump(self.intrinsics, f)    
+            json.dump(self.intrinsics, f)            
 
     def load_intrinsics_file(self):
         with open(self.intrinsics_file, 'r') as f:
@@ -178,11 +178,6 @@ class NerfSLAM():
         # ic(self.intrinsics)
         if save_intrinsics:
             self.save_intrinsics_file()
-
-    def combine_clouds(self):
-        args = self.load_args()
-        combine_clouds(buffer=args["buffer"], stride=args["img_stride"])
-        return os.path.join(self.dataset_dir, 'cloud.pcd')
     
     def load_args(self):
 
