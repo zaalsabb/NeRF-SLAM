@@ -18,6 +18,7 @@ import json
 
 from scipy.optimize import least_squares
 # from plyfile import PlyData, PlyElement
+import sklearn
 
 # Search for pyngp in the build folder.
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -105,6 +106,14 @@ class NerfFusion:
         self.ngp = ngp.Testbed(mode, 0) # NGP can only use device = 0
 
         n_images = args.buffer
+
+        if self.evaluate:
+            train_split = 0.8
+            test_split = 1 - train_split
+            self.test_images_ids = sklearn.utils.random.sample_without_replacement(n_images, int(test_split*n_images))
+        else:
+            self.test_images_ids = []
+
         aabb_scale = 4
         nerf_scale = 1.0 # Not needed unless you call self.ngp.load_training_data() or you render depths!
         offset = np.array([np.inf, np.inf, np.inf]) # Not needed unless you call self.ngp.load_training_data()
@@ -112,6 +121,7 @@ class NerfFusion:
         self.ngp.create_empty_nerf_dataset(n_images, nerf_scale, offset, aabb_scale, render_aabb)
 
         self.ngp.nerf.training.n_images_for_training = 0;
+
 
         if args.gui:
             # Pick a sensible GUI resolution depending on arguments.
@@ -337,11 +347,24 @@ class NerfFusion:
         # TODO: we need to restore the self.ref_frames[frame_id] = [image, gt, etc] for evaluation....
         for i, id in enumerate(frame_ids):
             self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i]]        
-        self.ngp.nerf.training.update_training_images(list(frame_ids),
-                                                      list(poses[:, :3, :4]), 
-                                                      list(images), 
-                                                      list(depths), 
-                                                      list(depths_cov), resolution, principal_point, focal_length, depth_scale, depth_cov_scale)
+            
+        frame_ids = list(frame_ids)
+        poses = list(poses[:, :3, :4])
+        images = list(images)
+        depths = list(depths)
+        depths_cov = list(depths_cov)
+
+        frame_ids   = [p for i, p in enumerate(frame_ids) if i not in self.test_images_ids]
+        poses       = [p for i, p in enumerate(poses) if i not in self.test_images_ids]
+        images      = [p for i, p in enumerate(images) if i not in self.test_images_ids]
+        depths      = [p for i, p in enumerate(depths) if i not in self.test_images_ids]
+        depths_cov  = [p for i, p in enumerate(depths_cov) if i not in self.test_images_ids]        
+
+        self.ngp.nerf.training.update_training_images(frame_ids,
+                                                      poses, 
+                                                      images, 
+                                                      depths, 
+                                                      depths_cov, resolution, principal_point, focal_length, depth_scale, depth_cov_scale)
 
         # On the first frame, set the viewpoint
         if self.ngp.nerf.training.n_images_for_training == 1:
@@ -666,7 +689,8 @@ class NerfFusion:
         # stride = 300
         stride = 2
 
-        depth_scale = self.compute_scale()
+        # depth_scale = self.compute_scale()
+        _, depth_scale = self.fit_scale()
 
         ic('Creating training views...')
         for i in range(0, self.ngp.nerf.training.n_images_for_training, stride):
