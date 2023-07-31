@@ -71,8 +71,8 @@ def send_ref_image(project_id, image_id):
             img = Image.open(io.BytesIO(flask.request.files["image"].read()))    
             img = np.array(img)
 
-            depth = Image.open(io.BytesIO(flask.request.files["depth"].read()))    
-            depth = np.array(depth)            
+            # depth = Image.open(io.BytesIO(flask.request.files["depth"].read()))    
+            # depth = np.array(depth)            
 
             if flask.request.files.get("pose"):
                 json_str=flask.request.files["pose"].read()
@@ -81,7 +81,7 @@ def send_ref_image(project_id, image_id):
             else:
                 return flask.make_response("Pose not found", 404)  
 
-            nerfs[project_id].save_image(img, depth, pose, image_id)
+            nerfs[project_id].save_image(img, None, pose, image_id)
             return flask.make_response(f"Image {image_id} saved successfully")  
         else:
             return flask.make_response("Image not found", 404)            
@@ -125,7 +125,7 @@ def create_nerf_view(project_id):
     # watch for output file changes
     cached_stamp = None
     f_Twc = os.path.join(output_dir, 'T_w_c.txt')
-    timeout = 100
+    timeout = 0.5
     t1 = time.time()
     while time.time() - t1 < timeout:
         if not os.path.exists(f_Twc):
@@ -137,13 +137,10 @@ def create_nerf_view(project_id):
         if os.stat(f_Twc).st_mtime != cached_stamp:
             break
 
-    f_img   = os.path.join(output_dir, 'est_image_viz.jpg')
-    f_depth = os.path.join(output_dir, 'est_depth_viz.png')
-
     data = io.BytesIO()
     with zipfile.ZipFile(data, mode='w') as z:
-        for f in [f_img, f_depth, f_Twc]:
-            z.write(f)
+        for f in os.listdir(output_dir):
+            z.write(os.path.join(output_dir, f))
 
     data.seek(0)
     return flask.send_file(
@@ -161,7 +158,7 @@ def run_nerf_background(project_id):
     nerfs[project_id].run_nerf()
 
 def web():
-    app.run(host='::',port=5000, debug=True, use_reloader=False) 
+    app.run(host='::',port=5002, debug=True, use_reloader=False) 
 
 if __name__ == "__main__":
     torch.multiprocessing.set_start_method('spawn')
@@ -185,5 +182,5 @@ if __name__ == "__main__":
             commands.pop(project_id)
         time.sleep(1)    
 
-    # app.run(host='::',port=5000, debug=True) 
+    # app.run(host='::',port=5002, debug=True) 
 

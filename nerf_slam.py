@@ -42,7 +42,8 @@ class NerfSLAM():
         self.poses_t = []
 
         os.makedirs(self.dataset_dir, exist_ok=True)
-        os.makedirs(os.path.join(self.dataset_dir,'images'), exist_ok=True)
+        os.makedirs(os.path.join(self.dataset_dir,'rgb'), exist_ok=True)
+        os.makedirs(os.path.join(self.dataset_dir,'depth'), exist_ok=True)
         os.makedirs(os.path.join(self.dataset_dir,'output'), exist_ok=True)
 
         self.fusion_module = None
@@ -101,7 +102,7 @@ class NerfSLAM():
         self.save_intrinsics_file()
 
 
-    def save_image(self, image, depth, pose, k, save_intrinsics=False):
+    def save_image(self, image, depth, pose, k, save_intrinsics=True):
         if 'frames' not in self.intrinsics:
             self.intrinsics['frames'] = []
         
@@ -116,9 +117,9 @@ class NerfSLAM():
             self.intrinsics["aabb"]  = np.array([[-2, -2, -2], [2, 2, 2]]).tolist() # Computed automatically
 
         frame = {}
-        frame['file_path'] = f"images/frame{k:05}.png"
+        frame['file_path'] = f"rgb/frame{k:05}.png"
         if depth is not None:
-            frame['depth_path'] = f"images/depth{k:05}.png"
+            frame['depth_path'] = f"rgb/depth{k:05}.png"
 
         frame['transform_matrix'] = pose2matrix(pose).tolist()
         self.intrinsics['frames'].append(frame)
@@ -164,9 +165,9 @@ class NerfSLAM():
         self.intrinsics["scale_trans"] = sf
 
         frame = {}
-        frame['file_path'] = f"images/frame{k:05}.png"
+        frame['file_path'] = f"rgb/frame{k:05}.png"
         if f_depth is not None:
-            frame['depth_path'] = f"images/depth{k:05}.png"
+            frame['depth_path'] = f"depth/depth{k:05}.png"
 
         frame['transform_matrix'] = c2w.tolist()
         self.intrinsics['frames'].append(frame)

@@ -61,6 +61,19 @@ class NerfFusion:
         import json
         with open(os.path.join(args.dataset_dir, "transforms.json"), 'r') as f:
             self.json = json.load(f)
+
+        output_dir = os.path.join(self.args.dataset_dir,'output')
+        K = np.eye(3)
+        K[0,0] = self.json["fl_x"]
+        K[1,1] = self.json["fl_y"]
+        K[0,2] = self.json["cx"]   
+        K[1,2] = self.json["cy"]      
+        w      = self.json["w"]    
+        h      = self.json["h"]               
+        intrinsics = {'camera_matrix': K.tolist(), 'width': w, 'height':h}
+        with open(os.path.join(output_dir, 'intrinsics.json'), 'w') as f:
+            json.dump(intrinsics,f)
+
         # self.render_path = []
         self.gt_to_slam_scale = 1 # We should be calculating this online.... Sim(3) pose alignment
         # sf = self.json["scale_trans"]
@@ -355,14 +368,17 @@ class NerfFusion:
             # self.eval_gt_traj()
             self.create_training_views()
         if self.total_iters % 1 == 0 and self.total_iters > 0:
-            output_dir = os.path.join(self.args.dataset_dir,'output')
-            if os.path.exists(os.path.join(self.args.dataset_dir, "query_pose.json")):               
-                with open(os.path.join(self.args.dataset_dir, "query_pose.json"), 'r') as f:
-                    pose_dict = json.load(f)
-                pose = np.array(pose_dict['pose'])
-                if not np.all(pose == self.prev_pose):
-                    self.create_view(pose, self.json["w"], self.json["h"], output_dir)
-            
+            try:
+                output_dir = os.path.join(self.args.dataset_dir,'output')
+                if os.path.exists(os.path.join(self.args.dataset_dir, "query_pose.json")):               
+                    with open(os.path.join(self.args.dataset_dir, "query_pose.json"), 'r') as f:
+                        pose_dict = json.load(f)
+                    pose = np.array(pose_dict['pose'])
+                    if not np.all(pose == self.prev_pose):
+                        self.create_view(pose, self.json["w"], self.json["h"], output_dir)
+            except Exception as e:
+                ic(e)
+
         self.total_iters += 1
 
     def evaluate_depth(self):
@@ -476,8 +492,6 @@ class NerfFusion:
         return np.sum(np.linalg.norm(t,axis=1))
 
     def fit_scale(self):
-        if len(self.poses) < 7:
-            return None, None
         
         poses_d = []
         poses_m1 = []
@@ -507,6 +521,9 @@ class NerfFusion:
         s = res.x[0]
         pose = res.x[1:]
         T_d_m1 = pose2matrix(pose, scale=s)
+        # T_d_m1 = pose2matrix(pose, scale=1/s)        
+        # T_d_m1 = pose2matrix(pose, scale=1)
+        # s = 1        
 
         # s = self.compute_scale()
         
@@ -514,12 +531,13 @@ class NerfFusion:
 
     def create_view(self, pose, w, h, output_dir):
 
+        if len(self.poses) < 7:
+            return
+
         if len(self.poses) > self.n_kf or self.T_d_w is None:
             self.n_kf = len(self.poses)
             self.T_d_w, self.nerf_scale = self.fit_scale()
 
-        if self.T_d_w is None:
-            return
         
         ic(f'scale: {self.nerf_scale }')
 
@@ -548,6 +566,12 @@ class NerfFusion:
         self.ngp.shall_train = False  
 
         T_w_c0 = pose2matrix(pose)
+        
+        T_link_c0 = pose2matrix([0,0,0,-0.5,0.5,-0.5,0.5])
+        # T_link_c0 = pose2matrix([0,0,0,1,0,0,0])
+        T_w_link = T_w_c0
+        T_w_c0 = T_w_link.dot(T_link_c0)
+
         T_w_c = nerf_matrix_to_ngp(T_w_c0)
         T_d_c = self.T_d_w @ T_w_c
 
@@ -573,13 +597,17 @@ class NerfFusion:
         # ref_depth = self.ref_frames[i][2].squeeze()
         # est_to_ref_depth_scale = ref_depth.mean() / est_depth.mean()
 
-        est_depth_viz = np.array(est_depth*1000 / self.nerf_scale * 3, dtype=np.uint16)
+        # est_depth_viz = np.array(est_depth * 1000, dtype=np.uint16)
+        # est_depth_viz = np.array(est_depth * 1000 / self.nerf_scale, dtype=np.uint16)
+        est_depth_viz = np.array(est_depth * 1000 / self.nerf_scale / self.nerf_scale , dtype=np.uint16)
+
         est_depth_viz = cv2.rotate(est_depth_viz, cv2.ROTATE_180)
 
         # cv2.imwrite(os.path.join(output_dir,f'ref_image_viz_{i}.jpg'), ref_image_viz)        
         cv2.imwrite(os.path.join(output_dir,f'est_image_viz.jpg'), est_image_viz)        
         cv2.imwrite(os.path.join(output_dir,f'est_depth_viz.png'), est_depth_viz)        
         np.savetxt( os.path.join(output_dir,'T_w_c.txt') , T_w_c0)
+        np.savetxt( os.path.join(output_dir,'scale.txt') , np.array(self.nerf_scale).reshape((1,1)))
 
         # Reset the state
         self.ngp.shall_train                 = tmp_shall_train
