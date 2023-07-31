@@ -18,7 +18,7 @@ import json
 
 from scipy.optimize import least_squares
 # from plyfile import PlyData, PlyElement
-import sklearn
+from sklearn.utils.random import sample_without_replacement
 
 # Search for pyngp in the build folder.
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -107,10 +107,10 @@ class NerfFusion:
 
         n_images = args.buffer
 
-        if self.evaluate:
+        if args.eval:
             train_split = 0.8
             test_split = 1 - train_split
-            self.test_images_ids = sklearn.utils.random.sample_without_replacement(n_images, int(test_split*n_images))
+            self.test_images_ids = sample_without_replacement(n_images, int(test_split*n_images))
         else:
             self.test_images_ids = []
 
@@ -666,6 +666,16 @@ class NerfFusion:
         return mc
 
     def create_training_views(self, output_dir='/datasets/project_1/output'):
+
+
+        if len(self.poses) < 7:
+            return
+
+        if len(self.poses) > self.n_kf or self.T_d_w is None:
+            self.n_kf = len(self.poses)
+            # depth_scale = self.compute_scale()
+            _, depth_scale = self.fit_scale()
+
         spp = 1 # samples per pixel
         linear = True
         fps = 20.0
@@ -688,9 +698,6 @@ class NerfFusion:
 
         # stride = 300
         stride = 2
-
-        # depth_scale = self.compute_scale()
-        _, depth_scale = self.fit_scale()
 
         ic('Creating training views...')
         for i in range(0, self.ngp.nerf.training.n_images_for_training, stride):
