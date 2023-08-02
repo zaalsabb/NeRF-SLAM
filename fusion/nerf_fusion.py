@@ -35,11 +35,6 @@ from utils.utils import *
 def round_up_to_base(x, base=10):
     return x + (base - x) % base
 
-def get_marching_cubes_res(res_1d: int, aabb:  ngp.BoundingBox ) -> np.ndarray:
-    scale = res_1d / (aabb.max - aabb.min).max()
-    res3d = (aabb.max - aabb.min) * scale + 0.5
-    res3d = round_up_to_base(res3d.astype(np.int32), 16)
-    return res3d
 
 
 class NerfFusion:
@@ -107,12 +102,12 @@ class NerfFusion:
 
         n_images = args.buffer
 
-        if args.eval:
-            train_split = 0.8
-            test_split = 1 - train_split
-            self.test_images_ids = sample_without_replacement(n_images, int(test_split*n_images))
-        else:
-            self.test_images_ids = []
+        # if args.eval:
+        #     train_split = 0.8
+        #     test_split = 1 - train_split
+        #     self.test_images_ids = sample_without_replacement(n_images, int(test_split*n_images))
+        # else:
+        self.test_images_ids = []
 
         aabb_scale = 4
         nerf_scale = 1.0 # Not needed unless you call self.ngp.load_training_data() or you render depths!
@@ -344,15 +339,16 @@ class NerfFusion:
         focal_length = intrinsics[:2]
         principal_point = intrinsics[2:]
 
-        # TODO: we need to restore the self.ref_frames[frame_id] = [image, gt, etc] for evaluation....
-        for i, id in enumerate(frame_ids):
-            self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i]]        
+        # TODO: we need to restore the self.ref_frames[frame_id] = [image, gt, etc] for evaluation...
             
         frame_ids = list(frame_ids)
         poses = list(poses[:, :3, :4])
         images = list(images)
         depths = list(depths)
         depths_cov = list(depths_cov)
+
+        for i, id in enumerate(frame_ids):
+            self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i], poses[i]]                
 
         frame_ids   = [p for i, p in enumerate(frame_ids) if i not in self.test_images_ids]
         poses       = [p for i, p in enumerate(poses) if i not in self.test_images_ids]
@@ -588,15 +584,11 @@ class NerfFusion:
         self.ngp.nerf.rendering_min_transmittance = 1e-4
         self.ngp.shall_train = False  
 
-        T_w_c0 = pose2matrix(pose)
-        
-        T_link_c0 = pose2matrix([0,0,0,-0.5,0.5,-0.5,0.5])
-        # T_link_c0 = pose2matrix([0,0,0,1,0,0,0])
-        T_w_link = T_w_c0
-        T_w_c0 = T_w_link.dot(T_link_c0)
-
-        T_w_c = nerf_matrix_to_ngp(T_w_c0)
-        T_d_c = self.T_d_w @ T_w_c
+        T_link_c = pose2matrix([0,0,0,-0.5,0.5,-0.5,0.5])
+        # T_link_c = pose2matrix([0,0,0,1,0,0,0])
+        T_w_link = pose2matrix(pose)
+        T_w_c = T_w_link @ T_link_c
+        T_d_c = self.T_d_w @ nerf_matrix_to_ngp(T_w_c)        
 
         self.ngp.camera_matrix = T_d_c[:3,:]
         # self.ngp.set_camera_to_training_view(0)
@@ -629,7 +621,7 @@ class NerfFusion:
         # cv2.imwrite(os.path.join(output_dir,f'ref_image_viz_{i}.jpg'), ref_image_viz)        
         cv2.imwrite(os.path.join(output_dir,f'est_image_viz.jpg'), est_image_viz)        
         cv2.imwrite(os.path.join(output_dir,f'est_depth_viz.png'), est_depth_viz)        
-        np.savetxt( os.path.join(output_dir,'T_w_c.txt') , T_w_c0)
+        np.savetxt( os.path.join(output_dir,'T_w_c.txt') , T_w_c)
         np.savetxt( os.path.join(output_dir,'scale.txt') , np.array(self.nerf_scale).reshape((1,1)))
 
         # Reset the state
@@ -644,26 +636,6 @@ class NerfFusion:
         # set prev pose
         self.prev_pose = pose
 
-    def marching_cubes(self,output_dir):
-        mc = self.ngp.compute_marching_cubes_mesh(resolution=get_marching_cubes_res(512, self.ngp.aabb), aabb=self.ngp.aabb, thresh=2)
-        vertex = np.array(list(zip(*mc["V"].T)), dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4')])
-        vertex_color = np.array(list(zip(*((mc["C"] * 255).T))), dtype=[('red', 'u1'), ('green', 'u1'), ('blue', 'u1')])
-
-        n = len(vertex)
-        assert len(vertex_color) == n
-
-        vertex_all = np.empty(n, vertex.dtype.descr + vertex_color.dtype.descr)
-
-        for prop in vertex.dtype.names:
-            vertex_all[prop] = vertex[prop]
-
-        for prop in vertex_color.dtype.names:
-            vertex_all[prop] = vertex_color[prop]
-
-        ply = PlyData([PlyElement.describe(vertex_all, 'vertex')], text=False)
-
-        ply.write( os.path.join(output_dir,'nerf_pc.ply'))        
-        return mc
 
     def create_training_views(self, output_dir='/datasets/project_1/output'):
 
@@ -674,7 +646,8 @@ class NerfFusion:
         if len(self.poses) > self.n_kf or self.T_d_w is None:
             self.n_kf = len(self.poses)
             # depth_scale = self.compute_scale()
-            _, depth_scale = self.fit_scale()
+            _, nerf_scale = self.fit_scale()
+            depth_scale = 1/nerf_scale
 
         spp = 1 # samples per pixel
         linear = True
@@ -728,9 +701,10 @@ class NerfFusion:
             est_depth_viz =  np.array(depth_scale*est_depth*1000, dtype=np.uint16)
         
             if not i in self.kf_idx_to_f_idx.keys(): continue
+            f_idx = self.kf_idx_to_f_idx[i]*self.args.img_stride
             
-            cv2.imwrite(os.path.join(output_dir,f'est_image_viz{i}.jpg'), est_image_viz)        
-            cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{i}.png'), est_depth_viz) 
+            cv2.imwrite(os.path.join(output_dir,f'est_image_viz{f_idx}.jpg'), est_image_viz)        
+            cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{f_idx}.png'), est_depth_viz) 
 
             ic(f'view: {i}')
         
@@ -750,9 +724,18 @@ class NerfFusion:
         self.ngp.camera_matrix               = tmp_cam
         self.ngp.render_mode                 = tmp_render_mode
 
-    def eval_gt_traj(self):
+    def eval_gt_traj(self, output_dir='/datasets/project_1/output'):
 
-        output_dir='/datasets/project_1/output'
+        if len(self.poses) < 7:
+            return
+
+        if len(self.poses) > self.n_kf or self.T_d_w is None:
+            self.n_kf = len(self.poses)
+            # depth_scale = self.compute_scale()
+            _, nerf_scale = self.fit_scale()
+            depth_scale = 1/nerf_scale
+
+        
         # self.marching_cubes(output_dir)
 
         ic(self.total_iters)
@@ -785,24 +768,18 @@ class NerfFusion:
         total_psnr = 0
         ic(f'test: {len(self.ref_frames) }')
 
-        poses = {}
-
-        assert(len(self.ref_frames) == self.ngp.nerf.training.n_images_for_training)
-        for i in range(0, self.ngp.nerf.training.n_images_for_training, stride):
+        # assert(len(self.ref_frames) == self.ngp.nerf.training.n_images_for_training)
+        for i in range(0, self.ref_frames, stride):
             # Use GT trajectory for evaluation to have consistent metrics.
-            self.ngp.set_camera_to_training_view(i) 
+                        
+            # self.ngp.set_camera_to_training_view(i) 
             # print(self.ngp.camera_matrix)
 
-            # get pose
-            w2c = np.eye(4)
-            w2c[:3,:] = self.ngp.camera_matrix            
-            c2w = np.linalg.inv(w2c)        
-            c2w = ngp_matrix_to_nerf(c2w, scale=self.gt_to_slam_scale, offset=0.0) # THIS multiplies by scale = 1 and offset = 0.5
-            pose = matrix2pose(c2w)
-            poses[i] = pose.tolist()
+            pose = self.ref_frames[i][4]
+            # T_d_c = self.T_d_w @ nerf_matrix_to_ngp(pose2matrix(pose))        
+            self.ngp.camera_matrix = pose
 
-
-            # Get ref/est RGB imageswwwwwwww
+            # Get ref/est RGB images
             self.ngp.render_mode = ngp.Shade
             ref_image = self.ref_frames[i][0]
             est_image = self.ngp.render(ref_image.shape[1], ref_image.shape[0], spp, linear, fps=fps)
@@ -870,9 +847,6 @@ class NerfFusion:
 
             if self.viz:
                 cv2.waitKey(1)
-
-        with open(os.path.join(output_dir, 'poses.json'), 'w') as f:
-            json.dump(poses,f)
             
             
         dt = self.ngp.elapsed_training_time

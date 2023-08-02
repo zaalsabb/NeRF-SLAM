@@ -13,16 +13,16 @@ import shutil
 sys.settrace
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-try:
-    import torch
-    from torch.multiprocessing import Process
+# try:
+import torch
+from torch.multiprocessing import Process
 
-    from datasets.data_module import DataModule
-    from gui.gui_module import GuiModule
-    from slam.slam_module import SlamModule
-    from fusion.fusion_module import FusionModule
-except:
-    print('cannot import modules..')
+from datasets.data_module import DataModule
+from gui.gui_module import GuiModule
+from slam.slam_module import SlamModule
+from fusion.fusion_module import FusionModule
+# except:
+#     print('cannot import modules..')
 
 
 class Struct:
@@ -342,6 +342,6 @@ if __name__ == '__main__':
     torch.set_grad_enabled(False)    
 
     project_id = 1
-    dataset_dir = os.path.join(f"/datasets", f"project_{project_id}")
+    dataset_dir = os.path.join(f"/home/zaid/datasets", f"project_{project_id}")
     nerf = NerfSLAM(dataset_dir)
     nerf.run_nerf()
