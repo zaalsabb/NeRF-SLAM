@@ -341,22 +341,21 @@ class NerfFusion:
 
         # TODO: we need to restore the self.ref_frames[frame_id] = [image, gt, etc] for evaluation...
             
-        frame_ids = list(frame_ids)
+        frame_ids_ = list(frame_ids)
         poses = list(poses[:, :3, :4])
         images = list(images)
         depths = list(depths)
         depths_cov = list(depths_cov)
 
-        for i, id in enumerate(frame_ids):
+        for i, id in enumerate(frame_ids_):
             self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i], poses[i]] 
 
-        ic(frame_ids)
-
-        frame_ids   = [p for i, p in enumerate(frame_ids) if i not in self.test_images_ids]
-        poses       = [p for i, p in enumerate(poses) if i not in self.test_images_ids]
-        images      = [p for i, p in enumerate(images) if i not in self.test_images_ids]
-        depths      = [p for i, p in enumerate(depths) if i not in self.test_images_ids]
-        depths_cov  = [p for i, p in enumerate(depths_cov) if i not in self.test_images_ids]        
+        # Remove test images from training
+        frame_ids   = [i for i in frame_ids_                     if i not in self.test_images_ids]
+        poses       = [p for i, p in zip(frame_ids_, poses)      if i not in self.test_images_ids]
+        images      = [p for i, p in zip(frame_ids_, images)     if i not in self.test_images_ids]
+        depths      = [p for i, p in zip(frame_ids_, depths)     if i not in self.test_images_ids]
+        depths_cov  = [p for i, p in zip(frame_ids_, depths_cov) if i not in self.test_images_ids]        
 
         self.ngp.nerf.training.update_training_images(frame_ids,
                                                       poses, 
@@ -375,8 +374,6 @@ class NerfFusion:
         for _ in range(self.iters):
             self.fit_volume_once()
             self.ngp.apply_camera_smoothing(1000.0/self.fps)
-        # if self.evaluate and self.total_iters % self.eval_every_iters == 0:
-        #     self.create_training_views()
 
     def fit_volume_once(self):
         self.ngp.frame()
@@ -387,7 +384,6 @@ class NerfFusion:
         if self.evaluate and self.total_iters % self.eval_every_iters == 0:
             print("Evaluate.")
             self.eval_gt_traj()
-            # self.create_training_views()
         if self.total_iters % 1 == 0 and self.total_iters > 0:
             try:
                 output_dir = os.path.join(self.args.dataset_dir,'output')
@@ -639,93 +635,6 @@ class NerfFusion:
         self.prev_pose = pose
 
 
-    def create_training_views(self, output_dir='/datasets/project_1/output'):
-
-
-        if len(self.poses) < 7:
-            return
-
-        if len(self.poses) > self.n_kf or self.T_d_w is None:
-            self.n_kf = len(self.poses)
-            # depth_scale = self.compute_scale()
-            _, nerf_scale = self.fit_scale()
-            depth_scale = 1/nerf_scale
-
-        spp = 1 # samples per pixel
-        linear = True
-        fps = 20.0
-
-        # Save the state before evaluation
-        import copy
-        tmp_shall_train = copy.deepcopy(self.ngp.shall_train)
-        tmp_background_color = copy.deepcopy(self.ngp.background_color)
-        tmp_snap_to_pixel_centers = copy.deepcopy(self.ngp.snap_to_pixel_centers)
-        tmp_snap_to_pixel_centers = copy.deepcopy(self.ngp.snap_to_pixel_centers)
-        tmp_rendering_min_transmittance = copy.deepcopy(self.ngp.nerf.rendering_min_transmittance)
-        tmp_cam = self.ngp.camera_matrix.copy()
-        tmp_render_mode = copy.deepcopy(self.ngp.render_mode)
-
-        # Modify the state for evaluation
-        self.ngp.background_color = [0.0, 0.0, 0.0, 1.0]
-        self.ngp.snap_to_pixel_centers = True
-        self.ngp.nerf.rendering_min_transmittance = 1e-4
-        self.ngp.shall_train = False        
-
-        # stride = 300
-        stride = 2
-
-        ic('Creating training views...')
-        for i in range(0, self.ngp.nerf.training.n_images_for_training, stride):
-        # for i in range(0, len(self.render_path), stride):
-
-            # Use GT trajectory for evaluation to have consistent metrics.
-
-            # self.ngp.camera_matrix = self.render_path[i][:3,:]
-            self.ngp.set_camera_to_training_view(i) 
-
-            if len(self.ref_frames) == 0: break
-            ref_image = self.ref_frames[0][0]
-            h = ref_image.shape[0]
-            w = ref_image.shape[1]            
-
-            # Get ref/est RGB images
-            self.ngp.render_mode = ngp.Shade
-            est_image = self.ngp.render(w, h, spp, linear, fps=fps)
-            # ic(est_image.shape)
-
-            est_image_viz = 255*cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
-
-            # TODO: Get ref/est Depth images
-            self.ngp.render_mode = ngp.Depth
-            est_depth = self.ngp.render(w, h, spp, linear, fps=fps)
-            est_depth = est_depth[...,0] # The rest of the channels are the same (and last is 1)
-
-            est_depth_viz =  np.array(depth_scale*est_depth*1000, dtype=np.uint16)
-        
-            if not i in self.kf_idx_to_f_idx.keys(): continue
-            f_idx = self.kf_idx_to_f_idx[i]*self.args.img_stride
-            
-            cv2.imwrite(os.path.join(output_dir,f'est_image_viz{f_idx}.jpg'), est_image_viz)        
-            cv2.imwrite(os.path.join(output_dir,f'est_depth_viz{f_idx}.png'), est_depth_viz) 
-
-            ic(f'view: {i}')
-        
-        with open(os.path.join(output_dir, 'poses.json'), 'w') as f:
-            json.dump(self.poses,f)
-
-        with open(os.path.join(output_dir, 'keyframes.json'), 'w') as f:
-            json.dump(self.kf_idx_to_f_idx,f)            
-
-
-        # Reset the state
-        self.ngp.shall_train                 = tmp_shall_train
-        self.ngp.background_color            = tmp_background_color
-        self.ngp.snap_to_pixel_centers       = tmp_snap_to_pixel_centers
-        self.ngp.snap_to_pixel_centers       = tmp_snap_to_pixel_centers
-        self.ngp.nerf.rendering_min_transmittance = tmp_rendering_min_transmittance
-        self.ngp.camera_matrix               = tmp_cam
-        self.ngp.render_mode                 = tmp_render_mode
-
     def eval_gt_traj(self, output_dir='/datasets/project_1/output'):
 
         if len(self.poses) < 7:
@@ -771,11 +680,14 @@ class NerfFusion:
         ic(f'test: {len(self.ref_frames) }')
 
         # assert(len(self.ref_frames) == self.ngp.nerf.training.n_images_for_training)
-        for i in range(0, len(self.ref_frames), stride):
+        for i in self.ref_frames.keys():
             # Use GT trajectory for evaluation to have consistent metrics.
                         
             # self.ngp.set_camera_to_training_view(i) 
             # print(self.ngp.camera_matrix)
+            
+            if i not in self.test_images_ids: 
+                continue
 
             pose = self.ref_frames[i][4]
             # T_d_c = self.T_d_w @ nerf_matrix_to_ngp(pose2matrix(pose))        
@@ -794,6 +706,7 @@ class NerfFusion:
             ref_depth = self.ref_frames[i][2].squeeze()
             est_depth = self.ngp.render(ref_image.shape[1], ref_image.shape[0], spp, linear, fps=fps)
             est_depth = est_depth[...,0] # The rest of the channels are the same (and last is 1)
+            est_depth = est_depth * depth_scale
 
             # Calc metrics
             mse = float(compute_error(est_image, ref_image))
@@ -834,7 +747,6 @@ class NerfFusion:
             est_image_viz = 255*cv2.cvtColor(est_image, cv2.COLOR_BGRA2RGBA)
 
             est_depth_viz = np.array(est_depth*1000, dtype=np.uint16)
-            # est_depth_viz /= self.json['scale_trans'] # scale back to origin size            
 
             if not i in self.kf_idx_to_f_idx.keys(): continue
             f_idx = self.kf_idx_to_f_idx[i]*self.args.img_stride
