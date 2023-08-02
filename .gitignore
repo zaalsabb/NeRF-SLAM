@@ -7,7 +7,7 @@ imgui.ini
 *.ply
 *.obj
 
-datasets/*
+#datasets/*
 
 
 ### Python specific gitignore
