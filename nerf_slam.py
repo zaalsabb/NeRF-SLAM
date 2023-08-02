@@ -342,6 +342,6 @@ if __name__ == '__main__':
     torch.set_grad_enabled(False)    
 
     project_id = 1
-    dataset_dir = os.path.join(f"/home/zaid/datasets", f"project_{project_id}")
+    dataset_dir = os.path.join(f"/datasets", f"project_{project_id}")
     nerf = NerfSLAM(dataset_dir)
     nerf.run_nerf()

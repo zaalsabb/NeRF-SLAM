@@ -15,4 +15,4 @@ width: 0
 height: 0
 network: ""
 eval: True
-create_view_per_iters: 100
+training_split: 0.8

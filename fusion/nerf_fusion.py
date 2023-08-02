@@ -102,12 +102,12 @@ class NerfFusion:
 
         n_images = args.buffer
 
-        # if args.eval:
-        #     train_split = 0.8
-        #     test_split = 1 - train_split
-        #     self.test_images_ids = sample_without_replacement(n_images, int(test_split*n_images))
-        # else:
-        self.test_images_ids = []
+        if args.eval:
+            train_split = args.training_split
+            test_split = 1 - train_split
+            self.test_images_ids = sample_without_replacement(n_images, int(test_split*n_images))
+        else:
+            self.test_images_ids = []
 
         aabb_scale = 4
         nerf_scale = 1.0 # Not needed unless you call self.ngp.load_training_data() or you render depths!
@@ -348,7 +348,9 @@ class NerfFusion:
         depths_cov = list(depths_cov)
 
         for i, id in enumerate(frame_ids):
-            self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i], poses[i]]                
+            self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i], poses[i]] 
+
+        ic(frame_ids)
 
         frame_ids   = [p for i, p in enumerate(frame_ids) if i not in self.test_images_ids]
         poses       = [p for i, p in enumerate(poses) if i not in self.test_images_ids]
@@ -384,8 +386,8 @@ class NerfFusion:
             self.ngp.nerf.training.depth_supervision_lambda *= self.annealing_rate
         if self.evaluate and self.total_iters % self.eval_every_iters == 0:
             print("Evaluate.")
-            # self.eval_gt_traj()
-            self.create_training_views()
+            self.eval_gt_traj()
+            # self.create_training_views()
         if self.total_iters % 1 == 0 and self.total_iters > 0:
             try:
                 output_dir = os.path.join(self.args.dataset_dir,'output')
@@ -769,7 +771,7 @@ class NerfFusion:
         ic(f'test: {len(self.ref_frames) }')
 
         # assert(len(self.ref_frames) == self.ngp.nerf.training.n_images_for_training)
-        for i in range(0, self.ref_frames, stride):
+        for i in range(0, len(self.ref_frames), stride):
             # Use GT trajectory for evaluation to have consistent metrics.
                         
             # self.ngp.set_camera_to_training_view(i) 
